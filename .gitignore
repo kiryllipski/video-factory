@@ -1,0 +1,72 @@
+# ─── Секреты / ключи (НИКОГДА не коммитим) ───────────────────────────
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+credentials*.json
+*serviceaccount*.json
+service-account*.json
+*_secret*
+*.credentials
+
+# ─── Тяжёлые runtime-артефакты (видео/аудио/кадры, ~ГБ) ───────────────
+# Все прогоны фабрики: картинки, TTS, hyperframes render, готовые ролики
+runs/
+autopilot_factory/runs/*
+video-factory-codex/autopilot_factory/runs/*
+handoff/sergey_local_factory/runs/*
+!**/runs/.gitkeep
+
+# Медиа-файлы (генерируются, не исходники)
+*.mp4
+*.mov
+*.webm
+*.wav
+*.mp3
+*.m4a
+*.aac
+
+# Сгенерированные/временные картинки (кадры). Референсы держим отдельно.
+autopilot_factory/**/*.png
+video-factory-codex/**/*.png
+
+# BGM-библиотека (большие сэмплы)
+handoff/sergey_local_factory/assets/bgm/*.wav
+
+# ─── Архивы / бандлы ─────────────────────────────────────────────────
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# ─── Python ──────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Node ────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# ─── Локальный конфиг пайплайна (содержит окружение оператора) ────────
+pipeline.config.json
+config/channel/
+
+# ─── OS / редакторы ──────────────────────────────────────────────────
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+
+# Локальные runtime-локи Claude Code
+.claude/scheduled_tasks.lock

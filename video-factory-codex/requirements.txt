@@ -1,0 +1,5 @@
+# video-factory — runtime deps (Python 3.9+)
+google-genai>=1.47      # image (Nano Banana) + TTS + текстовый раннер; замени под свой стек
+pydantic>=2.11          # контракты schemas.py (Script/FramePlan/ComplianceVerdict/QAReport)
+requests>=2.31          # gemini_agent deep-research REST (можно убрать при замене провайдера)
+# Внешние (НЕ pip): Node>=20 (лучше 22), ffmpeg>=6, `npx --yes hyperframes` (тянется при рендере)

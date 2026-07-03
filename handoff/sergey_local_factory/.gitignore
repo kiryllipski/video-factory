@@ -1,0 +1,8 @@
+# runtime-артефакты и секреты — не коммитим
+runs/
+pipeline.config.json
+config/channel/
+__pycache__/
+*.pyc
+.env
+assets/bgm/*.wav

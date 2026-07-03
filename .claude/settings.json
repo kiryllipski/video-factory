@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "deny": [
+      "mcp__nano-banana__configure_gemini_token",
+      "mcp__nano-banana__generate_image",
+      "mcp__nano-banana__edit_image",
+      "mcp__nano-banana__continue_editing",
+      "mcp__nano-banana__get_configuration_status",
+      "mcp__nano-banana__get_last_image_info"
+    ]
+  }
+}

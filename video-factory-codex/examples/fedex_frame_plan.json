@@ -1,0 +1,127 @@
+{
+  "grade": "Corporate noir / old-money: deep emerald green, graphite grey and muted gold; sepia monochrome for archival inserts; a dirty-red accent for stamps and marks; soft film grain and vignette throughout",
+  "light": "Soft directional key light, deep falling shadows, low-key contrast, gentle vignette and subtle film grain",
+  "lens": "35mm documentary for scenes; 85mm macro for close details (invoices, cash, chips)",
+  "frames": [
+    {
+      "prompt": "Slow drift across a row of grounded cargo jets parked on a dark rain-slick tarmac at night, silent and abandoned, one dim runway lamp glowing far off, wet asphalt reflecting the light, cinematic vertical composition with the planes in the upper two thirds and the lower third left clean and empty",
+      "aspect": "9:16",
+      "ref_ids": [],
+      "motion": "ken_burns_in",
+      "start_s": 0.0,
+      "dur_s": 3.0
+    },
+    {
+      "prompt": "Extreme macro of an aircraft fuel gauge needle resting hard on empty against red, a cold idle jet engine blurred behind it in a dark hangar, tense stillness, key detail centered in the upper frame, clean uncluttered space below",
+      "aspect": "9:16",
+      "ref_ids": [],
+      "motion": "ken_burns_out",
+      "start_s": 3.0,
+      "dur_s": 2.6
+    },
+    {
+      "prompt": "A near-empty bank ledger page under a single desk lamp, a thin stack of only a few banknotes beside it, warm pool of light in surrounding darkness, macro detail in the upper two thirds, smooth clean desk surface free of any writing in the lower third",
+      "aspect": "9:16",
+      "ref_ids": [],
+      "motion": "parallax",
+      "start_s": 5.6,
+      "dur_s": 2.6
+    },
+    {
+      "prompt": "Macro of an overdue invoice stamped in dirty red ink, a large printed total looming, paper edges curling, harsh directional light raking across the fibres, the stamped total held in the upper center, the lower third an empty dark desk",
+      "aspect": "9:16",
+      "ref_ids": [],
+      "motion": "ken_burns_in",
+      "start_s": 8.2,
+      "dur_s": 2.8
+    },
+    {
+      "prompt": "Silhouette of a man in a 1970s suit standing at a high office window at night, city lights far below through the glass, contemplative and alone, figure framed in the upper two thirds slightly left, reflective floor and empty foreground in the lower third",
+      "aspect": "9:16",
+      "ref_ids": [],
+      "motion": "pan_right",
+      "start_s": 11.0,
+      "dur_s": 2.8
+    },
+    {
+      "prompt": "Close macro of a hand folding a small stack of banknotes into a coat pocket, tense and deliberate, warm rim light on the fabric, the action centered in the upper frame, clean dark cloth filling the lower third",
+      "aspect": "9:16",
+      "ref_ids": [],
+      "motion": "ken_burns_out",
+      "start_s": 13.8,
+      "dur_s": 1.8
+    },
+    {
+      "prompt": "A 1970s Las Vegas strip at night seen down the boulevard, rows of glowing vintage neon signs and marquees, warm electric haze, cars with round headlights, wide establishing shot with the neon skyline in the upper two thirds and empty road in the lower third",
+      "aspect": "9:16",
+      "ref_ids": [],
+      "motion": "ken_burns_in",
+      "start_s": 15.6,
+      "dur_s": 2.0
+    },
+    {
+      "prompt": "A vintage 1970s propeller-and-jet cargo plane resting on a runway at dusk, a determined founder in a period grey suit standing small beside the nose gear, heroic low angle, aircraft and figure in the upper two thirds, open tarmac clean in the lower third, no visible branding on the fuselage",
+      "aspect": "9:16",
+      "ref_ids": [],
+      "motion": "parallax",
+      "start_s": 17.6,
+      "dur_s": 2.8
+    },
+    {
+      "prompt": "Overhead view of a green blackjack felt table, playing cards fanned out and a hand pushing an entire stack of casino chips forward, dramatic spotlight, the felt and chips filling the upper two thirds, softly shadowed empty felt in the lower third",
+      "aspect": "9:16",
+      "ref_ids": [],
+      "motion": "ken_burns_in",
+      "start_s": 20.4,
+      "dur_s": 2.4
+    },
+    {
+      "prompt": "A tall overflowing pile of casino chips spilling across green felt, gleaming stacks catching warm light, sense of sudden abundance, chips towering in the upper two thirds, clean green felt in the lower third",
+      "aspect": "9:16",
+      "ref_ids": [],
+      "motion": "ken_burns_out",
+      "start_s": 22.8,
+      "dur_s": 2.8
+    },
+    {
+      "prompt": "A cargo jet lifting off into a golden dawn sky, nose tilting upward, warm hopeful light breaking over the horizon, the climbing aircraft in the upper two thirds, soft empty sky and runway haze in the lower third",
+      "aspect": "9:16",
+      "ref_ids": [],
+      "motion": "pan_left",
+      "start_s": 25.6,
+      "dur_s": 2.6
+    },
+    {
+      "prompt": "A tight portrait of the founder's face half in shadow, thoughtful and steady, a single hard key light carving the features, deep black background, face held in the upper two thirds, empty dark space in the lower third",
+      "aspect": "9:16",
+      "ref_ids": [],
+      "motion": "ken_burns_in",
+      "start_s": 28.2,
+      "dur_s": 2.2
+    },
+    {
+      "prompt": "An antique hourglass with sand streaming through the narrow waist, calendar pages blurred and flipping behind it, muted sepia tone, the hourglass centered in the upper two thirds, clean desk surface in the lower third",
+      "aspect": "9:16",
+      "ref_ids": [],
+      "motion": "ken_burns_out",
+      "start_s": 30.4,
+      "dur_s": 2.2
+    },
+    {
+      "prompt": "A rising line chart climbing steeply, overlaid on a fleet of cargo planes multiplying across a bright sky, sense of exponential growth and scale, chart and planes filling the upper two thirds, clean gradient sky in the lower third",
+      "aspect": "9:16",
+      "ref_ids": [],
+      "motion": "parallax",
+      "start_s": 32.6,
+      "dur_s": 3.0
+    },
+    {
+      "prompt": "A single casino chip resting on green felt under a tight spotlight, everything else dropping into darkness, quiet and final, the chip centered in the upper two thirds echoing the opening, clean empty felt in the lower third",
+      "aspect": "9:16",
+      "ref_ids": [],
+      "motion": "ken_burns_in",
+      "start_s": 35.6,
+      "dur_s": 2.4
+    }
+  ]
+}
