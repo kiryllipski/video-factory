@@ -89,6 +89,14 @@ def build(run_dir: Path, channel: str) -> Path:
     engine.assemble(plan, script, frames, durations, beat_words, voice_wav, out_mp4, run_dir / "hf")
     engine.deliver(run_dir, channel, out_mp4)  # копия финала в DELIVERY_ROOT (iCloud)
 
+    # run_meta: версия пайплайна → publish_log → аналитика сравнивает v1/v2-ролики по метрикам
+    import datetime
+    (run_dir / "run_meta.json").write_text(json.dumps({
+        "pipeline_version": schemas.PIPELINE_VERSION,
+        "channel": channel,
+        "built_at": datetime.datetime.now().isoformat(timespec="seconds"),
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+
     print(f"[done] {out_mp4}")
     cost = run_dir / "cost.json"
     if cost.exists():

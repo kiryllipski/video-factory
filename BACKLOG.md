@@ -1,7 +1,19 @@
 # BACKLOG / HANDOFF — состояние и следующие шаги
 
 > Живой документ для продолжения из нового чата. Читай после `CLAUDE.md` → `PLAYBOOK.md` → `ARCHITECTURE.md`.
-> Обновлено: 2026-07-07 (сессия — готовые видео переведены на внешнее хранилище iCloud).
+> Обновлено: 2026-07-13 (сессия — pipeline v2 по плану роста VitalLogic).
+
+## 🆕 Pipeline v2 (2026-07-13) — постер-кадр, симптом-хук, коммент-вопрос, отчёт
+По разбору месяца VitalLogic (медиана 141 просм., узкое место — показы) внедрён **pipeline v2**;
+план и статус техзадач — [growth_plan_2026-07-13.md §3](autopilot_factory/channels/vitallogic_bad_pl/growth_plan_2026-07-13.md).
+Снапшот старой версии — git-тег `pipeline-v1`, эта — `pipeline-v2`; версия (`schemas.PIPELINE_VERSION`)
+пишется в `run_meta.json` + `publish_log.jsonl`, сравнение версий — в `orchestration/analytics_report.py`.
+Кратко: `Script.poster_text` рендерится заголовком с t=0 (кадр-0 = обложка ленты, проверено офлайн-
+рендером); кадры синхронны битам (был баг равномерной раскладки); симптом-хук ≤1.5с / запрет пересказа
+хука в бите 2 / `loop_closure` (authoring_guide + prompts/*); ротация шаблонов заголовка («błąd» ≤30%);
+`PublishPackage.pinned_comment` → `youtube.py post-comments` (нужен scope force-ssl); автоскан PL
+стоп-слов в `validate_run.py`; сборка сама находит Node≥20 (`assembly._node22_env`) — PATH-грабли ниже
+закрыты. ⚠️ Очередь загрузки до ~Jul 21 — ещё v1-ролики; v2 пойдёт следующей партией.
 
 ## 🆕 Хранение готовых видео перенесено на iCloud (2026-07-07)
 Все ранее собранные ролики (21 прогон, ~1.9GB) перенесены (не скопированы) из
@@ -45,13 +57,13 @@ scriptwriter(flash35) → compliance(pro) → visual_director(pro) → **image_a
 Плюсы: 4 текстовых вызова Gemini убраны из цены, качество текста выше. Не публикует, только `out.mp4`.
 Гейт: `build_media` тратит деньги — запускать после «go» владельца по сценарию.
 
-### ⚠️ Грабли окружения: Node.js версия
+### ⚠️ Грабли окружения: Node.js версия — ✅ ЗАКРЫТО в pipeline-v2 (2026-07-13)
 `hyperframes render` (стадия 6) требует **Node 20+** (`util.styleText`) — системный дефолт `nvm`
-на этой машине был **v18.17.0**, из-за чего рендер падал в конце прогона (после того как сценарий/
-кадры/озвучка уже оплачены) с `SyntaxError`. **⚠️ 2026-07-03 (video-factory): `nvm alias default`
-из прошлой сессии НЕ подхватился — `build_media.py` снова стартовал под v18.17.0 и упал на рендере.**
-Надёжный обходной путь на прогон: `export PATH="$HOME/.nvm/versions/node/v22.22.3/bin:$PATH"` перед
-`build_media.py`. Если рендер падает с `SyntaxError...styleText` — первым делом `node -v`.
+на этой машине **v18.17.0**, из-за чего рендер падал в конце прогона (после оплаты кадров/озвучки),
+и `nvm alias default` не подхватывался в неинтерактивном шелле. **v2: `assembly._node22_env()`
+сам находит nvm-Node≥20 и подсовывает его subprocess'ам рендера/transcribe — экспортировать PATH
+больше не нужно** (проверено офлайн-рендером 2026-07-13). Если рендер всё же падает на
+`SyntaxError...styleText` — в `~/.nvm/versions/node` нет ни одного Node≥20, поставь через nvm.
 
 ### 🛠️ Фикс `image_agent.py`: ретрай на пустой `candidates` (2026-07-03, video-factory)
 Nano Banana 2 иногда отдаёт ответ с `candidates=None` (транзиент) → `generate_image` падал на

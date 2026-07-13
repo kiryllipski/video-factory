@@ -7,11 +7,34 @@ assembly.py — сборка ролика: HTML-композиция hyperframes
 кадры и субтитры идеально синхронны с голосом. Формат — вертикаль 1080×1920.
 """
 from __future__ import annotations
+import os
 import json
 import shutil
 import subprocess
 from pathlib import Path
 from html import escape
+
+
+def _node22_env() -> dict:
+    """hyperframes CLI требует Node 20+ (util.styleText); системный default через nvm на этой
+    машине — v18. До 2026-07-13 хелпер жил только в engine._transcribe_words, а `hyperframes
+    render` здесь запускался с системным PATH — сборка падала, если оператор не положил Node 22
+    в PATH руками (memory: build-media-needs-node22-path). v2: сборка сама находит любой
+    установленный Node>=20 под nvm и подсовывает его в PATH только своим subprocess'ам."""
+    env = os.environ.copy()
+    nvm_dir = Path.home() / ".nvm" / "versions" / "node"
+    if nvm_dir.is_dir():
+        candidates = sorted(
+            (p for p in nvm_dir.iterdir() if p.is_dir() and p.name.startswith("v")),
+            key=lambda p: tuple(int(x) for x in p.name.lstrip("v").split(".")),
+            reverse=True,
+        )
+        for c in candidates:
+            major = int(c.name.lstrip("v").split(".")[0])
+            if major >= 20 and (c / "bin" / "node").exists():
+                env["PATH"] = f"{c / 'bin'}:{env.get('PATH', '')}"
+                break
+    return env
 
 _HF_JSON = {
     "$schema": "https://hyperframes.heygen.com/schema/hyperframes.json",
@@ -124,12 +147,31 @@ def _caption_clips(beat_words: list[list[dict]], fallback_captions: list[str],
     return clips, tweens
 
 
+def _headline_clip(text: str, dur: float) -> tuple[list[str], list[str]]:
+    """v2 (growth_plan_2026-07-13, этап 1): постер-заголовок первого кадра. Лента Shorts
+    показывает кадр-0 как «обложку» — поэтому заголовок ПОЛНОСТЬЮ видим уже при t=0
+    (никаких входных анимаций/fade-in: tween `from opacity:0` делает его невидимым в
+    нулевом кадре). Уходит мягким fade-out в конце своего окна. Позиция — верхняя треть
+    ниже UI-зоны платформ (~15% сверху), не пересекается с караоке-субтитрами (нижняя треть)."""
+    if not text.strip():
+        return [], []
+    dur = max(dur, 0.8)
+    clip = (f'<div id="headline" class="clip headline" data-start="0.000" '
+            f'data-duration="{dur:.3f}" data-track-index="3">{escape(text.strip())}</div>')
+    fade = min(0.3, dur / 3)
+    tween = (f'tl.to("#headline",{{opacity:0,duration:{fade:.3f},ease:"power1.in"}},'
+             f'{dur - fade:.3f});')
+    return [clip], [tween]
+
+
 def _build_html(frame_durs, beat_words, fallback_captions, beat_starts, beat_durs,
-               motions, cap_style, total: float, n_frames: int) -> str:
+               motions, cap_style, total: float, n_frames: int,
+               headline: str = "", headline_dur: float = 0.0) -> str:
     fc, ft = _seq_clips("frame", list(range(n_frames)), frame_durs, motions, total)
     cc, ct = _caption_clips(beat_words, fallback_captions, beat_starts, beat_durs, cap_style)
-    clips = fc + cc
-    tweens = ft + ct
+    hc, ht = _headline_clip(headline, headline_dur)
+    clips = fc + cc + hc
+    tweens = ft + ct + ht
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=1080, height=1920"/>
@@ -140,6 +182,9 @@ body{{font-family:Inter,Arial,sans-serif}}
 .cap{{position:absolute;left:70px;right:70px;bottom:340px;text-align:center;color:#fff;
 font-size:62px;font-weight:800;line-height:1.15;letter-spacing:-0.5px;
 text-shadow:0 4px 26px rgba(0,0,0,.85),0 0 2px rgba(0,0,0,.9)}}
+.headline{{position:absolute;left:60px;right:60px;top:320px;text-align:center;color:#fff;
+font-size:92px;font-weight:900;line-height:1.08;letter-spacing:-1px;text-transform:none;
+text-shadow:0 6px 34px rgba(0,0,0,.9),0 2px 6px rgba(0,0,0,.95),0 0 3px rgba(0,0,0,.9)}}
 .word{{display:inline-block;margin-right:0.26em}}
 .word:last-child{{margin-right:0}}
 </style></head>
@@ -158,13 +203,17 @@ window.__timelines["main"]=tl;
 
 
 def build_and_render(frames, beat_words, fallback_captions, cap_durs, motions, cap_style,
-                     voice_wav: Path, out_mp4: Path, work_dir: Path) -> Path:
+                     voice_wav: Path, out_mp4: Path, work_dir: Path,
+                     headline: str = "") -> Path:
     """Собирает и рендерит ролик.
     - beat_words — пословные тайминги (whisper) по одному списку на бит, абсолютное время;
       пустой список для бита → фолбэк на fallback_captions[i] на весь бит.
     - cap_durs — длительности битов (из per-beat TTS), сумма = длине озвучки.
-    - frames — сколько дал visual_director; равномерно раскладываются на ту же длину (Ken Burns).
-    Дорожки независимы → устойчиво к несовпадению числа кадров и битов."""
+    - frames — от visual_director. v2: при кадров == битов каждый кадр живёт РОВНО столько,
+      сколько звучит его бит (кадр синхронен смыслу озвучки — контракт «frames[i] ↔ beats[i]»
+      из authoring_guide; до 2026-07-13 кадры раскладывались равномерно и уезжали от голоса
+      на неравных битах). При несовпадении числа — прежний фолбэк: равномерная раскладка.
+    - headline — постер-заголовок первого кадра (v2): виден с t=0, живёт на первом бите."""
     work_dir = Path(work_dir); assets = work_dir / "assets"
     assets.mkdir(parents=True, exist_ok=True)
     n_frames = len(frames)
@@ -174,18 +223,29 @@ def build_and_render(frames, beat_words, fallback_captions, cap_durs, motions, c
     (work_dir / "meta.json").write_text(json.dumps({"id": work_dir.name, "name": work_dir.name}), encoding="utf-8")
 
     total = sum(float(d) for d in cap_durs)               # длину ведёт озвучка
-    frame_durs = [total / n_frames] * n_frames            # кадры равномерно на всю длину
+    if n_frames == len(cap_durs):
+        frame_durs = [float(d) for d in cap_durs]         # v2: кадр ↔ бит, тайминг от TTS
+    else:
+        frame_durs = [total / n_frames] * n_frames        # фолбэк: равномерно на всю длину
     beat_starts = []
     t = 0.0
     for d in cap_durs:
         beat_starts.append(t)
         t += float(d)
+    # окно постер-заголовка: первый бит + треть второго (успевает прочитаться), потолок 4с
+    headline_dur = 0.0
+    if headline.strip() and cap_durs:
+        headline_dur = float(cap_durs[0])
+        if len(cap_durs) > 1:
+            headline_dur += float(cap_durs[1]) / 3
+        headline_dur = min(headline_dur, 4.0)
     (work_dir / "index.html").write_text(
         _build_html(frame_durs, beat_words, fallback_captions, beat_starts, cap_durs,
-                   motions, cap_style, total, n_frames), encoding="utf-8")
+                   motions, cap_style, total, n_frames,
+                   headline=headline, headline_dur=headline_dur), encoding="utf-8")
 
     subprocess.run(["npx", "--yes", "hyperframes", "render", "-o", "video.mp4"],
-                   cwd=str(work_dir), check=True)
+                   cwd=str(work_dir), check=True, env=_node22_env())
 
     out_mp4 = Path(out_mp4)
     subprocess.run(["ffmpeg", "-y", "-i", str(work_dir / "video.mp4"), "-i", str(voice_wav),

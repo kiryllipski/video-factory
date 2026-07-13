@@ -96,6 +96,15 @@ python3 orchestration/idea_miner.py --channel <ch> --mode top --lang en --depth 
 Ключ `YOUTUBE_API_KEY` — в `.env` (проект Google Cloud `family-kitchen-480213`, там включён «YouTube
 Data API v3»; ключ ограничь этим API). Только официальный API (HTML-скрейпинг YouTube запрещён ToS).
 
+### Еженедельная аналитика канала (v2, growth_plan)
+```bash
+python3 orchestration/analytics_report.py "~/Downloads/Контент <даты> <канал>" [--out <файл.md>]
+```
+Отчёт по CSV-экспорту YouTube Studio: медиана/корреляции, KPI-вердикты (stayed ≥60%, лайки ≥5%,
+подп. ≥5/1k), доля шаблона «błąd» (лимит 30%), протокол аутлаера (≥3× медианы → 2–3 вариации темы),
+сравнение версий пайплайна (`pipeline_version` из publish_log.jsonl). Версии пайплайна: git-теги
+`pipeline-v1`/`pipeline-v2`, текущая — `schemas.PIPELINE_VERSION`; план — `growth_plan_2026-07-13.md`.
+
 ### Видео и медиа (НЕ используем AI-видео-модели — дорого)
 - **Изображения / кадры:** ⛔ MCP-сервер `nano-banana` ЗАПРЕЩЁН (решение владельца). Используем
   собственный тул [orchestration/image_agent.py](orchestration/image_agent.py) на ключе проекта:

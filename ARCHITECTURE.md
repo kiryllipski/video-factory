@@ -40,14 +40,19 @@ autopilot_factory/        # runtime-конвейер (СТРОИМ)
 
 ## 2. Контракты данных (Pydantic, `schemas.py`)
 
-Стадии общаются строго через JSON-схемы (`run_structured`), не свободным текстом:
-- **Script** — `hook` (≤3с), `beats[]` (каждый: `voiceover`, `on_screen_text`, `visual_cue`, `dur_s`),
-  `cta`, `total_dur_s`, `lang`. Лимиты длины зашиты в схему (retention).
+Стадии общаются строго через JSON-схемы (`run_structured`), не свободным текстом.
+`schemas.PIPELINE_VERSION` (сейчас **2.0**, growth_plan_2026-07-13) пишется в `run_meta.json`
+(build_media) и `publish_log.jsonl` (publisher) — аналитика сравнивает версии по метрикам:
+- **Script** — `hook` (≤3с, v2: симптом в первых словах), `beats[]` (каждый: `voiceover`,
+  `on_screen_text`, `visual_cue`, `dur_s`), `cta`, `total_dur_s`, `lang`,
+  **v2: `poster_text`** (3–6 слов — постер-заголовок первого кадра, рендерится сборкой с t=0).
 - **ComplianceVerdict** — `pass: bool`, `fixes[]`, `cleaned_script`.
 - **FramePlan** — `frames[]` (каждый: `prompt`, `aspect="9:16"`, `ref_ids[]`, `motion` {ken_burns|zoom|parallax},
   `start_s`, `dur_s`), `grade`/`light`/`lens` (общие на ролик — для консистентности).
 - **BuildManifest** — порядок кадров, тайминги, аудиодорожки, стиль субтитров → вход сборщику.
 - **QAReport** — `pass: bool`, чек-лист (hook-match, статика >3с, плашки, safe-зоны), `notes[]`.
+- **PublishPackage** — `title`/`description`/`hashtags`, **v2: `pinned_comment`** (вопрос-коммент
+  владельца, постится после выхода в public) и **`title_template`** (метка ротации заголовков).
 
 ## 3. Стадии конвейера (`engine.py`)
 
@@ -86,6 +91,17 @@ autopilot_factory/        # runtime-конвейер (СТРОИМ)
 
 Практика: `engine.py` собирает HTML-композицию hyperframes из `FramePlan` (кадры Nano Banana 2 как
 слои-картинки + CSS/GSAP-движение + караоке-субтитры из транскрипта), затем `hyperframes render` → mp4.
+
+**v2 сборки (2026-07-13, `assembly.py`):**
+- **Кадр ↔ бит:** при кадров == битов каждый кадр живёт ровно столько, сколько звучит его бит
+  (по реальному TTS); раньше кадры раскладывались равномерно и уезжали от смысла озвучки на
+  неравных битах. При несовпадении числа — прежний равномерный фолбэк.
+- **Постер-заголовок:** `poster_text` сценария рендерится крупным текстом (92px, верхняя треть,
+  ниже UI-зоны платформ) с t=0 БЕЗ входной анимации — кадр-0 является «обложкой» ролика в ленте
+  Shorts; уходит fade-out'ом в конце первого бита (+⅓ второго, потолок 4с). Фолбэк для старых
+  прогонов — `beats[0].on_screen_text`.
+- **Node 20+ сам:** `assembly._node22_env()` подсовывает nvm-Node≥20 subprocess'ам рендера —
+  сборка больше не требует Node 22 в PATH оболочки (раньше падала под системным v18).
 
 ## 5. Принципы реализации
 
@@ -153,6 +169,15 @@ autopilot_factory/        # runtime-конвейер (СТРОИМ)
   `youtube.py whoami --channel <label>` — read-only проверка токена, без публикации.
   `youtube.py upload --channel <label> --run <run_dir> [--privacy private|unlisted|public] [--publish-at <RFC3339 UTC>] [--lang pl|en]` — заливка.
   `youtube.py retry-pending --channel <label>` — дозаливка роликов, упавших на суточном лимите канала.
+  `youtube.py post-comments [--channel <label>]` — **v2:** постит владельческие комментарии-вопросы
+  из `publishers/comment_queue.jsonl` под роликами, уже вышедшими в public.
+- **v2 — комментарий-вопрос (`pinned_comment` в publish_package):** на private/scheduled ролик
+  комментировать нельзя, поэтому `upload` ставит текст в очередь `comment_queue.jsonl`, а
+  `post-comments` (запускать после каждого publishAt-слота, напр. из scheduled task) публикует его,
+  когда ролик стал public. Требует scope `youtube.force-ssl` (свежие токены его имеют; старые — re-auth).
+  Пиннинг через Data API невозможен — на свежем ролике владельческий коммент и так первый; закрепить
+  можно вручную в Studio. В `publish_log.jsonl` пишутся `pipeline_version` (из `run_meta.json`) и
+  `title_template` — по ним `orchestration/analytics_report.py` сравнивает версии/шаблоны.
 - **Отложенная публикация:** `--publish-at` заливает ролик как `private`, YouTube сам делает его
   `public` в указанный момент (UTC). Так строится план публикаций на неделю вперёд одним прогоном аплоадов.
 - **Раскрытие AI (обязательно):** `status.containsSyntheticMedia=true` ставится на `videos.insert`

@@ -171,25 +171,10 @@ def _trim_silence(path: Path) -> None:
 
 
 def _node22_env() -> dict:
-    """hyperframes CLI требует Node 20+ (util.styleText); системный default через nvm на этой
-    машине — v18, из-за чего `npx hyperframes transcribe` падает с SyntaxError и раньше это тихо
-    трактовалось как «whisper недоступен» (см. находку 2026-07-04 — целый ролик ушёл на keyword-
-    фолбэк капшенов из-за этого). Ищем любой установленный Node>=20 под nvm и подсовываем в PATH
-    только этому subprocess — глобальный os.environ не трогаем."""
-    env = os.environ.copy()
-    nvm_dir = Path.home() / ".nvm" / "versions" / "node"
-    if nvm_dir.is_dir():
-        candidates = sorted(
-            (p for p in nvm_dir.iterdir() if p.is_dir() and p.name.startswith("v")),
-            key=lambda p: tuple(int(x) for x in p.name.lstrip("v").split(".")),
-            reverse=True,
-        )
-        for c in candidates:
-            major = int(c.name.lstrip("v").split(".")[0])
-            if major >= 20 and (c / "bin" / "node").exists():
-                env["PATH"] = f"{c / 'bin'}:{env.get('PATH', '')}"
-                break
-    return env
+    """hyperframes CLI требует Node 20+ (util.styleText); системный default через nvm — v18.
+    v2 (2026-07-13): хелпер переехал в assembly._node22_env (теперь и `hyperframes render`
+    в сборке использует его, а не системный PATH); здесь — тонкий делегат для legacy-кода."""
+    return assembly._node22_env()
 
 
 def _transcribe_words(wav_path: Path, lang: str, offset: float, out_dir: Path) -> list[dict]:
@@ -292,8 +277,13 @@ def assemble(plan: schemas.FramePlan, script: schemas.Script, frames: list[Path]
     fallback_captions = [(b.on_screen_text or "") for b in script.beats]
     cap_style = schemas.CaptionStyle()
     motions = [f.motion for f in plan.frames]
+    # v2: постер-заголовок первого кадра — poster_text сценария; для старых прогонов без
+    # поля — фолбэк на on_screen_text первого бита (кадр-0 = «обложка» в ленте Shorts).
+    headline = (getattr(script, "poster_text", "") or "").strip() or \
+               (script.beats[0].on_screen_text or "").strip()
     return assembly.build_and_render(frames, beat_words, fallback_captions, durations, motions,
-                                     cap_style, voice_wav, out_mp4, work_dir)
+                                     cap_style, voice_wav, out_mp4, work_dir,
+                                     headline=headline)
 
 
 # --- Стадия 7: QA (advisory, gemini-2.5-flash, НЕ блокирует прогон) --------------

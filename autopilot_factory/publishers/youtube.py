@@ -30,6 +30,7 @@ publishers/youtube.py — автопостинг в YouTube Shorts через Yo
            --run autopilot_factory/runs/vitallogic_bad_pl/2026-07-10_slug --lang pl \
            --privacy private --publish-at 2026-07-11T06:00:00Z
 """
+from __future__ import annotations
 import os
 import sys
 import json
@@ -155,6 +156,87 @@ def cmd_whoami(args):
     print(f"[whoami] channel='{args.channel}' → «{title}» (подписчиков: {subs})")
 
 
+COMMENT_QUEUE = HERE / "comment_queue.jsonl"
+
+
+def _post_comment(yt, video_id: str, text: str) -> dict:
+    """Постит владельческий комментарий под роликом (commentThreads.insert).
+    Требует scope youtube.force-ssl — старые токены без него нужно re-auth'нуть.
+    Пиннинг через Data API v3 НЕВОЗМОЖЕН (метода нет) — но на свежем ролике без
+    комментариев владельческий коммент и так первый; при желании закрепить — вручную в Studio."""
+    return yt.commentThreads().insert(
+        part="snippet",
+        body={"snippet": {"videoId": video_id,
+                          "topLevelComment": {"snippet": {"textOriginal": text}}}},
+    ).execute()
+
+
+def _queue_comment(video_id: str, channel: str, publish_at: str | None, text: str):
+    """Ставит комментарий в очередь (постить можно только после выхода ролика в public —
+    на private/scheduled ролике комментарии недоступны). Обрабатывает `post-comments`."""
+    import datetime
+    with open(COMMENT_QUEUE, "a", encoding="utf-8") as f:
+        f.write(json.dumps({
+            "video_id": video_id, "channel": channel, "publish_at": publish_at,
+            "text": text, "queued_at": datetime.datetime.utcnow().isoformat() + "Z",
+        }, ensure_ascii=False) + "\n")
+
+
+def cmd_post_comments(args):
+    """Проходит comment_queue.jsonl: для роликов, уже вышедших в public, постит
+    владельческий комментарий-вопрос (growth_plan_2026-07-13, этап 3: цикл вовлечения).
+    Запускать после каждого publishAt-слота (scheduled task / вручную)."""
+    _require_libs()
+    if not COMMENT_QUEUE.exists():
+        print("[post-comments] очередь пуста (нет comment_queue.jsonl).")
+        return
+    entries = [json.loads(l) for l in COMMENT_QUEUE.read_text(encoding="utf-8").splitlines() if l.strip()]
+    if args.channel:
+        pending = [e for e in entries if e["channel"] == args.channel]
+        others = [e for e in entries if e["channel"] != args.channel]
+    else:
+        pending, others = entries, []
+    if not pending:
+        print("[post-comments] нет комментариев в очереди для этого канала.")
+        return
+    services: dict[str, object] = {}
+    remaining = list(others)
+    posted = 0
+    for e in pending:
+        ch = e["channel"]
+        yt = services.setdefault(ch, _service(ch))
+        try:
+            resp = yt.videos().list(part="status", id=e["video_id"]).execute()
+            items = resp.get("items", [])
+            status = items[0]["status"]["privacyStatus"] if items else "missing"
+        except Exception as exc:
+            print(f"  [post-comments] {e['video_id']}: не удалось проверить статус ({exc}); оставляю в очереди.")
+            remaining.append(e)
+            continue
+        if status != "public":
+            print(f"  [post-comments] {e['video_id']}: статус={status}, ещё не public — жду.")
+            remaining.append(e)
+            continue
+        try:
+            _post_comment(yt, e["video_id"], e["text"])
+            posted += 1
+            print(f"  [post-comments] ✓ {e['video_id']}: «{e['text'][:60]}…»"
+                  if len(e['text']) > 60 else f"  [post-comments] ✓ {e['video_id']}: «{e['text']}»")
+        except Exception as exc:
+            msg = str(exc)
+            if "insufficientPermissions" in msg or "forbidden" in msg.lower():
+                print(f"  [post-comments] ✗ {e['video_id']}: нет прав — токен канала '{ch}' без "
+                      f"scope youtube.force-ssl. Нужен повторный auth:\n"
+                      f"    python3 autopilot_factory/publishers/youtube.py auth --channel {ch} "
+                      f"--client-secret autopilot_factory/client_secret.json")
+            else:
+                print(f"  [post-comments] ✗ {e['video_id']}: {msg[:300]}")
+            remaining.append(e)
+    COMMENT_QUEUE.write_text(
+        "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in remaining), encoding="utf-8")
+    print(f"[post-comments] опубликовано: {posted}; осталось в очереди: {len(remaining)}.")
+
+
 def cmd_upload(args):
     _require_libs()
     from googleapiclient.http import MediaFileUpload
@@ -260,10 +342,40 @@ def cmd_upload(args):
     else:
         print("  [thumbnail] thumbnail.jpg не найден — пропускаю установку обложки")
 
+    # v2 (growth_plan этап 3): комментарий-вопрос владельца из publish_package.pinned_comment.
+    # Ролик public прямо сейчас → постим сразу; private/scheduled → в очередь (post-comments).
+    pinned = (pkg.get("pinned_comment") or "").strip()
+    result["pinned_comment"] = pinned
+    if pinned:
+        if status["privacyStatus"] == "public":
+            try:
+                _post_comment(yt, vid, pinned)
+                result["comment_posted"] = True
+                print(f"  [comment] владельческий комментарий опубликован: «{pinned[:60]}»")
+            except Exception as e:
+                result["comment_posted"] = False
+                _queue_comment(vid, args.channel, None, pinned)
+                print(f"  [comment] не удалось опубликовать сразу ({str(e)[:200]}) — "
+                      f"поставлен в очередь comment_queue.jsonl (post-comments)")
+        else:
+            _queue_comment(vid, args.channel, getattr(args, "publish_at", None), pinned)
+            result["comment_posted"] = False
+            print(f"  [comment] ролик не public (publishAt) — комментарий в очереди; после слота: "
+                  f"python3 autopilot_factory/publishers/youtube.py post-comments --channel {args.channel}")
+
     (run / "post_result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     pending_marker = run / "upload_pending.json"
     if pending_marker.exists():
         pending_marker.unlink()
+
+    # Версия пайплайна из run_meta.json (пишет build_media, v2+) — для сравнения v1/v2 в аналитике.
+    pipeline_version = ""
+    meta_path = run / "run_meta.json"
+    if meta_path.exists():
+        try:
+            pipeline_version = json.loads(meta_path.read_text(encoding="utf-8")).get("pipeline_version", "")
+        except Exception:
+            pipeline_version = ""
 
     # Накопительный журнал публикаций (append-only) для будущего анализа.
     pub_log = ROOT / "publishers" / "publish_log.jsonl"
@@ -271,6 +383,8 @@ def cmd_upload(args):
         f.write(json.dumps({
             "run": run.name, "channel": args.channel, "video_id": vid, "url": url,
             "title": title, "published_at_or_scheduled": result.get("publish_at") or "now",
+            "pipeline_version": pipeline_version,
+            "title_template": pkg.get("title_template", ""),
         }, ensure_ascii=False) + "\n")
     print(f"[done] {url}\n[saved] {run / 'post_result.json'}")
 
@@ -344,6 +458,12 @@ def main():
     r = sub.add_parser("retry-pending", help="дозалить ролики с upload_pending=true (лимит сброшен)")
     r.add_argument("--channel", default=None, help="ограничить одним каналом (по умолчанию — все)")
     r.set_defaults(func=cmd_retry_pending)
+
+    c = sub.add_parser("post-comments",
+                       help="опубликовать владельческие комментарии-вопросы из comment_queue.jsonl "
+                            "для роликов, уже вышедших в public (v2, growth_plan этап 3)")
+    c.add_argument("--channel", default=None, help="ограничить одним каналом (по умолчанию — все)")
+    c.set_defaults(func=cmd_post_comments)
 
     args = p.parse_args()
     args.func(args)

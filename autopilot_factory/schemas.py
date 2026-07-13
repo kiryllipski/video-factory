@@ -13,6 +13,12 @@ from __future__ import annotations
 from typing import List, Literal
 from pydantic import BaseModel, Field
 
+# Версия пайплайна. Пишется в run_meta.json (build_media) и publish_log.jsonl (publisher),
+# чтобы аналитика могла сравнивать v1/v2-ролики по метрикам (growth_plan_2026-07-13 §3).
+# v2 (2026-07-13): poster-первый кадр + хук-заголовок в сборке, симптом-хук ≤1.5с,
+# loop_closure, pinned_comment, синхронизация кадров с длительностью битов.
+PIPELINE_VERSION = "2.0"
+
 
 # --- Стадия 1: сценарий ---------------------------------------------------------
 class Beat(BaseModel):
@@ -25,10 +31,14 @@ class Beat(BaseModel):
 
 class Script(BaseModel):
     lang: str = Field("en", description="Язык ролика")
-    hook: str = Field(..., max_length=200, description="Хук первых 1–3 сек, без приветствий")
+    hook: str = Field(..., max_length=200, description="Хук первых 1–3 сек, без приветствий; симптом/боль — в первых словах")
     beats: List[Beat] = Field(..., min_length=3, max_length=20)
     cta: str = Field(..., max_length=160, description="Призыв: save/follow/share")
     total_dur_s: float = Field(..., ge=15, le=90, description="Целевой хронометраж 30–50с оптимум")
+    # v2 (growth_plan_2026-07-13): постер-текст первого кадра. 3–6 слов, язык канала —
+    # рендерится КРУПНО в верхней трети видео с 0.0с (кадр-0 = «обложка» в ленте Shorts).
+    # Пусто → сборка возьмёт beats[0].on_screen_text (обратная совместимость со старыми прогонами).
+    poster_text: str = Field("", max_length=48, description="Постер-заголовок первого кадра, 3–6 слов")
 
 
 # --- Стадия 2: комплаенс --------------------------------------------------------
@@ -108,9 +118,19 @@ class PublishPackage(BaseModel):
         "призыв поделиться/подписаться, обязательный дисклеймер канала последним абзацем"))
     hashtags: List[str] = Field(..., min_length=3, max_length=6, description=(
         "3-6 хэштегов языка канала, первые — topic-specific, включая #Shorts"))
+    # v2 (growth_plan_2026-07-13 §3): цикл вовлечения. pinned_comment — острый бинарный
+    # вопрос зрителю на языке канала; постится владельческим комментарием после выхода ролика
+    # в public (publishers/youtube.py post-comments). Пиннинг через API невозможен (Data API v3
+    # не поддерживает) — на свежем ролике без комментариев владельческий коммент и так сверху.
+    pinned_comment: str = Field("", max_length=200, description=(
+        "Вопрос-комментарий владельца под роликом (язык канала); пусто = не постить"))
+    # Ротация шаблонов заголовка (H-титул: «Ten błąd» ≤30% выпусков). Метка для аналитики.
+    title_template: str = Field("", description=(
+        "Метка шаблона заголовка: blad | liczba | zakaz | pytanie_binarne | kontrast | inne"))
 
 
 __all__ = [
     "Beat", "Script", "ComplianceVerdict", "Motion", "Frame", "FramePlan",
     "CaptionStyle", "AudioTrack", "BuildManifest", "QACheck", "QAReport",
+    "PublishPackage", "PIPELINE_VERSION",
 ]
