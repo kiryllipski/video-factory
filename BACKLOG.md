@@ -1,7 +1,29 @@
 # BACKLOG / HANDOFF — состояние и следующие шаги
 
 > Живой документ для продолжения из нового чата. Читай после `CLAUDE.md` → `PLAYBOOK.md` → `ARCHITECTURE.md`.
-> Обновлено: 2026-07-03 (сессия — фикс TTS-темпа, фикс окружения Node, находка бага CTA, новая рубрика Old Money Sins).
+> Обновлено: 2026-07-07 (сессия — готовые видео переведены на внешнее хранилище iCloud).
+
+## 🆕 Хранение готовых видео перенесено на iCloud (2026-07-07)
+Все ранее собранные ролики (21 прогон, ~1.9GB) перенесены (не скопированы) из
+`autopilot_factory/runs/<channel>/...` целиком в
+`/Users/kirillipski/Library/Mobile Documents/com~apple~CloudDocs/external storage/video/0.5/<channel>/<date>_<slug>/`
+— локальной рабочей копии для них больше нет. Для НОВЫХ прогонов пайплайн не меняет `runs/` как
+рабочую директорию (frames/audio/hf/json остаются там), но добавлена новая стадия `engine.deliver()`
+(`autopilot_factory/engine.py`) — копирует финальный `out.mp4` в `DELIVERY_ROOT` (env
+`VIDEO_DELIVERY_ROOT`, дефолт — путь выше) сразу после сборки. Вызывается из `engine.produce()`
+и `.claude/skills/video-factory/scripts/build_media.py`. Детали — `ARCHITECTURE.md` §1/§3.
+
+## 🆕 Майнер тем `idea_miner.py` + ресёрч запуска (2026-07-06)
+Разовый ресёрч → два свода с проверяемыми источниками:
+- [orchestration/research/54_faceless_youtube_launch_playbook.md](orchestration/research/54_faceless_youtube_launch_playbook.md) — запуск faceless-каналов 2025–2026: выбор ниши, RPM по нишам, медиаплан/каденс, метрики-пороги (swipe-away <40%, APV), YPP-2026, политика Inauthentic Content, масштабирование, чек-лист.
+- [orchestration/research/55_content_ideation_tools.md](orchestration/research/55_content_ideation_tools.md) — откуда брать темы и чем измерять спрос программно (YouTube Data API, autocomplete, DataForSEO, pytrends), парсинг конкурентов, outlier-метод.
+
+Из R55 собран рабочий тул **`orchestration/idea_miner.py`** (документирован в `CLAUDE.md`, зафиксирован в `ARCHITECTURE.md` §1):
+autocomplete (бесплатно) → YouTube Data API v3 → `--mode full` (outlier у мелких, порог `--min-subs`) ИЛИ
+`--mode top` (самые просматриваемые = подходы крупных) → опц. комменты-боли → LLM-ранжирование (Gemini) в JSON-бэклог.
+Ключ `YOUTUBE_API_KEY` в `.env` (GCP-проект `family-kitchen-480213`, там включён YouTube Data API v3; ключ ограничен этим API, без service-account-binding).
+Первые бэклоги — `orchestration/idea_backlog/vitallogic_bad_pl.json` + `vitallogic_EN_market_study.json`.
+**Находка ниши:** PL-органика тонкая (outlier ≈ бренд-реклама NOYO®); для PL сильнее autocomplete + адаптация англоязычного `top`. TODO: прогнать biz_failures/psychology/wealth_viz.
 
 ## Где мы сейчас (works)
 Runtime-конвейер **работает end-to-end** (Фаза 1). `autopilot_factory/engine.py` из темы делает ролик:
@@ -122,9 +144,11 @@ $0.69, чистый прогон). Оба 9:16, AAC-дорожка; компла
 ### P2 — Масштаб и деньги (нужно разрешение владельца)
 11. `batch_runner.py` — простой for-цикл с try/except на ролик, БЕЗ task queue (R31: для нашего
     масштаба 5-50 роликов очередь избыточна, файловый state-machine достаточен).
-12. Стадия 8 — дистрибуция/публикация: при разрешении — Unified API (Zernio/PostEverywhere) вместо
-    3 нативных SDK, экономит на TikTok app review; раздельные метаданные под платформу. **Вне текущих
-    полномочий** (см. PLAYBOOK §1). Архитектура — R30.
+12. Стадия 9 — публикация: **YouTube готова** — `autopilot_factory/publishers/youtube.py`
+    (портировано 2026-07-10 из `../creative production scheme`, см. ARCHITECTURE.md §7),
+    поддерживает отложенную публикацию (`--publish-at`). Остаётся: TikTok/Reels — при разрешении,
+    Unified API (Zernio/PostEverywhere) вместо нативных SDK, экономит на TikTok app review;
+    раздельные метаданные под платформу. **Вне текущих полномочий** (см. PLAYBOOK §1). Архитектура — R30.
 13. Стадия 9 — аналитика: YouTube Analytics API (точный retention) + сторонний скрейпер для TikTok
     (официальный Research API закрыт для коммерции) → метрики как контекст для сценариста.
 14. Монетизация — по триггеру (PLAYBOOK §6), когда каналы наберут тягу.

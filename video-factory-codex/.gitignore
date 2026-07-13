@@ -1,5 +1,0 @@
-.env
-autopilot_factory/runs/*/
-!autopilot_factory/runs/.gitkeep
-__pycache__/
-*.pyc

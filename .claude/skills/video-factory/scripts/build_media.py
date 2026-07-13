@@ -32,7 +32,11 @@ import engine                        # noqa: E402  (переиспользуем
 from image_agent import generate_image  # noqa: E402
 
 _NEGATIVE = ("NEGATIVE: over-saturated, deep-fried colors, 3d render, plastic skin, cartoon, "
-             "mutated geometry, extra limbs, random text, watermark, logo.")
+             "mutated geometry, extra limbs, random text, watermark, logo, white border, "
+             "photo frame, polaroid frame, paper margin, framed print, rounded photo corners, "
+             "readable text, typography, captions, subtitles, labels, diagram annotations, "
+             "infographic text, paragraphs, written words rendered in the image, text overlays — "
+             "image must bleed to all four edges of the canvas and contain NO letters or words anywhere.")
 
 
 def _load(run_dir: Path, name: str, model):
@@ -83,6 +87,7 @@ def build(run_dir: Path, channel: str) -> Path:
     print("[6/6] сборка (hyperframes → mp4, мукс озвучки) …")
     out_mp4 = run_dir / "out.mp4"
     engine.assemble(plan, script, frames, durations, beat_words, voice_wav, out_mp4, run_dir / "hf")
+    engine.deliver(run_dir, channel, out_mp4)  # копия финала в DELIVERY_ROOT (iCloud)
 
     print(f"[done] {out_mp4}")
     cost = run_dir / "cost.json"

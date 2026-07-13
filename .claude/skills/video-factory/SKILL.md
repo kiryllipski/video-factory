@@ -22,9 +22,10 @@ Opus пишет сценарий/комплаенс/план кадров/QA л�
 | Делает Claude (в этом навыке) | Делегируется Gemini | Локально |
 |---|---|---|
 | Сценарий (`script.json`) | Кадры — Nano Banana 2 (`image_agent.py`) | Сборка — hyperframes + ffmpeg (`assembly.py`) |
-| Комплаенс (`compliance.json`) | Озвучка — Gemini TTS (`audio_agent.py`) | Транскрипт для караоке (whisper через hyperframes) |
+| Комплаенс (`compliance.json`) | Озвучка — Gemini TTS (`audio_agent.py`) | Тайминг субтитров без ASR (`engine._estimate_word_timestamps`) |
 | План кадров (`frame_plan.json`) | | Мукс аудио/видео (ffmpeg) |
 | QA (`qa.json`) | | |
+| Пакет публикации (`publish_package.json`) | | |
 
 Всё, что уходит в Gemini и локальную сборку, инкапсулировано в один скрипт
 `scripts/build_media.py`. Claude его не переписывает — он готовит JSON-контракты и запускает скрипт.
@@ -40,9 +41,10 @@ Opus пишет сценарий/комплаенс/план кадров/QA л�
 
 ## Рабочий процесс
 
-1. **Вход.** Определи `channel` (`biz_failures` | `psychology` | `wealth_viz`) и `topic`.
+1. **Вход.** Определи `channel` (`biz_failures` | `psychology` | `wealth_viz` | `vitallogic_bad_pl`) и `topic`.
    Если тема не задана — предложи из `autopilot_factory/channels/<channel>/media_plan.md`.
-   Создай папку прогона: `autopilot_factory/runs/<YYYY-MM-DD>_<slug>/` (slug = тема, lower, пробелы→`-`, ≤40 симв).
+   Создай папку прогона: `autopilot_factory/runs/<channel>/<YYYY-MM-DD>_<slug>/` (slug = тема, lower,
+   пробелы→`-`, ≤40 симв) — прогоны разложены по каналам, не общей кучей (реорганизовано 2026-07-04).
 
 2. **Контекст канала.** Прочитай `autopilot_factory/channels/<channel>/studio_context.md` целиком —
    это источник правды по тону, рубрикам, формулам хука, визуальному коду, стоп-листам, CTA.
@@ -69,15 +71,33 @@ Opus пишет сценарий/комплаенс/план кадров/QA л�
    python3 scripts/build_media.py <run_dir> --channel <channel>
    ```
    Скрипт: генерит кадры (Nano Banana 2, hybrid-референсы), озвучивает по битам (Gemini TTS),
-   транскрибирует для караоке, собирает через hyperframes → немой mp4 → мукс озвучки → `out.mp4`.
-   По завершении покажи путь к `out.mp4` и сводку `cost.json`.
+   оценивает пословный тайминг для караоке (без ASR — `engine._estimate_word_timestamps`,
+   2026-07-05: whisper убран, см. authoring_guide.md), собирает через hyperframes → немой mp4 →
+   мукс озвучки → `out.mp4`, затем копирует `out.mp4` (`engine.deliver`, с 2026-07-07) во внешнее
+   хранилище iCloud — `.../external storage/video/0.5/<channel>/<date>_<slug>/out.mp4`
+   (`VIDEO_DELIVERY_ROOT` в `engine.py`; `run_dir` с рабочими файлами остаётся локально). По
+   завершении покажи путь к `out.mp4` (локальный и доставленный) и сводку `cost.json`.
+
+9. **Пакет публикации → `publish_package.json`** (схема `PublishPackage`, добавлена 2026-07-05 —
+   раньше эта стадия отсутствовала вообще, ни один ролик не имел готовых title/description/hashtags).
+   Пиши на языке канала: `title` (≤100 симв, с ключевым словом темы), `description` (3-5 абзацев:
+   раскрытие темы → практический вывод → призыв поделиться, обязательный дисклеймер канала последним
+   абзацем — бери из studio_context §7), `hashtags` (3-6, первые topic-specific, включая `#Shorts`).
+   Бесплатно, делает Claude, как и весь остальной текст.
 
 ## Гейты и деньги
 
-- **Стадии 2–7 (весь текст) бесплатны** — их делает Claude. Свободно итерируй сценарий.
+- **Стадии 2–7 и 9 (весь текст) бесплатны** — их делает Claude. Свободно итерируй.
 - **Стадия 8 (build_media) тратит** — кадры Nano Banana 2 + TTS. **Не запускай без явного согласия.**
 - Стоимость каждого прогона пишется в `<run_dir>/cost.json` (`cost_tracker`). Один ролик ≈ $0.3–0.6.
-- Ничего не публикуется. Навык только производит файл на диске.
+- Навык сам по себе ничего не публикует — только производит файлы на диске (включая
+  `publish_package.json`). **Автозагрузка возможна** (портирована 2026-07-10 из `../creative
+  production scheme`) — `autopilot_factory/publishers/youtube.py upload`, поддерживает отложенную
+  публикацию (`--publish-at`, RFC3339 UTC). Токен уже есть для `vitallogic_bad_pl`
+  (`autopilot_factory/tokens/vitallogic_bad_pl.json`); для biz_failures/psychology/wealth_viz нужен
+  `youtube.py auth --channel <label> --client-secret client_secret.json` (аккаунты ещё не созданы).
+  **Публикация — видимое вовне действие: всегда подтверждай с владельцем перед вызовом `upload`**,
+  даже если файлы уже собраны.
 
 ## Улучшения относительно engine.py (заложены здесь)
 

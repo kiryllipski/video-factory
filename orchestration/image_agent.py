@@ -108,8 +108,11 @@ def generate_image(model: str, prompt: str, aspect_ratio: str = "9:16",
         if _cost:
             _cost.record_tokens(mid, getattr(resp, "usage_metadata", None), step="generate_image")
         cands = getattr(resp, "candidates", None)
-        if cands:
-            for part in cands[0].content.parts:
+        # 2026-07-05: cands может быть непустым, но cands[0].content/.parts — None (safety-блок
+        # без явного prompt_feedback) — раньше падало TypeError и обрывало весь batch на кадре.
+        parts = getattr(getattr(cands[0], "content", None), "parts", None) if cands else None
+        if parts:
+            for part in parts:
                 inline = getattr(part, "inline_data", None)
                 if inline and inline.data:
                     img_bytes = inline.data

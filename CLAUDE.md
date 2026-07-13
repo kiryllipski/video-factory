@@ -21,12 +21,14 @@ Claude держит цель, стратегию, архитектуру и ка
 
 | Файл | Что внутри |
 |---|---|
+| [STATUS.md](STATUS.md) | **Начинай отсюда каждую сессию.** Живой борд: статус каждого направления/канала и пошаговый бэклог активных задач — рабочий документ владельца |
 | [PLAYBOOK.md](PLAYBOOK.md) | Главный документ: роль/полномочия менеджера, команда агентов, пайплайн фабрики, медиапланирование, фазы разворачивания, монетизация, юнит-экономика |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Техническая реализация runtime-конвейера: каталоги, JSON-контракты, стадии `engine.py`, сборка видео |
 | [BACKLOG.md](BACKLOG.md) | Состояние и следующие задачи (хендофф для нового чата): что работает, приоритетный бэклог P0–P2 |
 | [RESEARCH_PLAN.md](RESEARCH_PLAN.md) | Бэклог ресёрча (build-time): что исследуем, какой моделью, куда сохраняем |
 | [STRATEGY_QUESTIONNAIRE.md](STRATEGY_QUESTIONNAIRE.md) | Опросник стратегии/тактики/ограничений с вариантами ответов — заполняет владелец |
 | [orchestration/GEMINI_ORCHESTRATION.md](orchestration/GEMINI_ORCHESTRATION.md) | Как устроено делегирование Gemini: реестр моделей, выбор по сложности, раннер |
+| [orchestration/CHANNEL_LAUNCH_CHECKLIST.md](orchestration/CHANNEL_LAUNCH_CHECKLIST.md) | Чек-лист настройки YouTube-канала перед запуском: оформление, верификация, API-поля, монетизация — читать перед запуском любого нового канала |
 | `orchestration/research/*.md` | Сохранённые своды принципов (build-time), переиспользуются как контекст |
 | `orchestration/roles/*.md` | Системные промпты саб-агентов (build-time). Runtime-роли → `autopilot_factory/prompts/` |
 
@@ -67,6 +69,32 @@ headless Chrome для `hyperframes render` + параллельные вызо�
   рынку/нише — `research`; быстрый/дешёвый ресёрч — `flash35`/`pro` + `--search`.
   ⚠️ Иногда возвращает отчёт без первых разделов — проверяй начало файла, недостающее
   дозаказывай `pro --search`. `antigravity` — не подключён.
+
+### Майнинг тем/идей (проверяемые сигналы спроса вместо угадывания)
+`orchestration/idea_miner.py` — пайплайн выбора тем: YouTube autocomplete (бесплатно, без ключа)
+→ YouTube Data API v3 → опц. майнинг болей из комментов → опц. LLM-ранжирование в бэклог идей (Gemini).
+Принцип: LLM **не выдумывает** темы, а ранжирует сигналы. Метод — `research/55`. Два способа выборки:
+- `--mode full` (дефолт) — **outlier-детект** «залетевших» видео у **мелких** каналов (V/S ratio =
+  views/subscribers). Ставь `--min-subs` (напр. 150), иначе 8–24-подписчиковые бренд-аккаунты дают
+  раздутый VS-шум. VS-метод по природе не находит крупные каналы (у них база большая → VS<1.5).
+- `--mode top` — самые просматриваемые ролики ниши (`search.list order=viewCount`) = **проверенные
+  темы/форматы крупных** независимо от размера канала. Для «изучить подходы лидеров» (в т.ч. на другом
+  языке — LLM переносит приём в поле `borrowed_approach` и адаптирует под язык/нишу канала).
+```bash
+# только семантика (бесплатно, без ключа):
+python3 orchestration/idea_miner.py --mode autocomplete --seed "business failures" --lang en --depth 1
+# outlier у мелких (нужен YOUTUBE_API_KEY в .env):
+python3 orchestration/idea_miner.py --channel biz_failures --seed "company collapse" \
+  --lang en --max-queries 5 --min-vs 3 --min-subs 150 --max-subs 500000 --comments --rank \
+  --out orchestration/idea_backlog/biz_failures.json
+# изучить крупных (в т.ч. англоязычных) → адаптировать к своему каналу:
+python3 orchestration/idea_miner.py --channel <ch> --mode top --lang en --depth 0 \
+  --seed "supplement mistakes" --max-queries 6 --published-after 2025-01-01 --min-views 100000 \
+  --rank --out orchestration/idea_backlog/<ch>_market_study.json
+```
+⚠️ `search.list` = **100 юнитов** из дневных 10 000 (`--max-queries` лимитирует); остальные вызовы — 1 юнит.
+Ключ `YOUTUBE_API_KEY` — в `.env` (проект Google Cloud `family-kitchen-480213`, там включён «YouTube
+Data API v3»; ключ ограничь этим API). Только официальный API (HTML-скрейпинг YouTube запрещён ToS).
 
 ### Видео и медиа (НЕ используем AI-видео-модели — дорого)
 - **Изображения / кадры:** ⛔ MCP-сервер `nano-banana` ЗАПРЕЩЁН (решение владельца). Используем

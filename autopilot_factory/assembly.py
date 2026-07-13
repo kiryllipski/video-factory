@@ -36,39 +36,61 @@ def _seq_clips(kind: str, items, durs, motions, total):
     """Раскладывает кадры последовательно по своей дорожке.
     Кадры и субтитры имеют НЕЗАВИСИМЫЕ тайминги, но обе дорожки покрывают один и тот же total."""
     clips, tweens = [], []
-    t = 0.0
+    t = 0.0  # накапливаем в полной точности...
     n = len(items)
     for i in range(n):
         d = float(durs[i]) if i < len(durs) else (total / n)
+        t_r = round(t, 3)  # ...но раскладываем/сравниваем по округлённому — иначе независимое
+        d_r = round(d, 3)  # округление start/duration соседних клипов даёт наложение в 1мс
         clips.append(
             f'<img id="f{i}" class="clip frame" src="assets/frame{i}.png" '
-            f'data-start="{t:.3f}" data-duration="{d:.3f}" data-track-index="1"/>'
+            f'data-start="{t_r:.3f}" data-duration="{d_r:.3f}" data-track-index="1"/>'
         )
         mo = motions[i] if i < len(motions) else "ken_burns_in"
-        tweens.append(_motion_tween(f"#f{i}", mo, t, d))
-        t += d
+        tweens.append(_motion_tween(f"#f{i}", mo, t_r, d_r))
+        t = t_r + d_r
     return clips, tweens
 
 
-def _chunk_words(words: list[dict], size: int):
-    """Группирует пословные тайминги бита в чанки по `size` слов (2-3 — правило читаемости:
-    не грузить экран целым предложением, показывать то, что звучит прямо сейчас)."""
-    for k in range(0, len(words), size):
-        yield words[k:k + size]
+def _chunk_words(words: list[dict], max_words: int, max_chars: int = 24):
+    """Группирует пословные тайминги бита в чанки по `max_words` слов И не длиннее `max_chars`
+    символов (с пробелами) — длинные слова (PL и др.) иначе переносят чанк на вторую строку
+    (портировано 2026-07-05 из `../creative production scheme/autopilot_factory/engine.py:chunk_words`,
+    аудит E4 там же). Одиночное слово длиннее max_chars всё равно кладём в свой чанк."""
+    chunks: list[list[dict]] = []
+    cur: list[dict] = []
+    cur_chars = 0
+    for w in words:
+        token = w["text"]
+        add = len(token) + (1 if cur else 0)  # +1 за пробел перед словом
+        if cur and (len(cur) >= max_words or cur_chars + add > max_chars):
+            chunks.append(cur)
+            cur, cur_chars, add = [], 0, len(token)
+        cur.append(w)
+        cur_chars += add
+    if cur:
+        chunks.append(cur)
+    return chunks
 
 
 def _caption_clips(beat_words: list[list[dict]], fallback_captions: list[str],
                    beat_starts: list[float], beat_durs: list[float], cap_style) -> tuple[list[str], list[str]]:
-    """Строит субтитровую дорожку. Если для бита есть пословный whisper-тайминг — режем на чанки
-    по words_on_screen с реальным началом/концом произнесения (караоке-подсветка по словам).
-    Если распознавания нет — фолбэк: on_screen_text целиком на весь бит (старое поведение)."""
+    """Строит субтитровую дорожку. Если для бита есть пословный тайминг (оценка по длине слова,
+    см. `engine._estimate_word_timestamps` — без ASR) — режем на чанки по words_on_screen/max_chars
+    с реальным началом/концом произнесения (караоке-подсветка по словам). Если тайминга нет —
+    фолбэк: on_screen_text целиком на весь бит (старое поведение)."""
     clips, tweens = [], []
     cap_idx = 0
+    prev_end = 0.0  # монотонный клэмп: соседние чанки не должны касаться/перекрываться
+                     # (округление в _estimate_word_timestamps иногда даёт разницу <1мс)
     for i, words in enumerate(beat_words):
         if words:
-            for chunk in _chunk_words(words, cap_style.words_on_screen):
+            for chunk in _chunk_words(words, cap_style.words_on_screen, cap_style.max_chars):
                 cs, ce = chunk[0]["start"], chunk[-1]["end"]
+                cs = max(cs, prev_end)
+                ce = max(ce, cs)
                 cd = max(ce - cs, 0.3)
+                prev_end = cs + cd
                 word_spans = []
                 for j, w in enumerate(chunk):
                     wid = f"c{cap_idx}_w{j}"
@@ -90,6 +112,8 @@ def _caption_clips(beat_words: list[list[dict]], fallback_captions: list[str],
             cap = escape(fallback_captions[i] or "").strip()
             if cap:
                 cs, cd = beat_starts[i] + 0.12, max(beat_durs[i] - 0.12, 0.3)
+                cs = max(cs, prev_end)
+                prev_end = cs + cd
                 clips.append(
                     f'<div id="cap{cap_idx}" class="clip cap" data-start="{cs:.3f}" '
                     f'data-duration="{cd:.3f}" data-track-index="2">{cap}</div>'

@@ -61,7 +61,10 @@ class FramePlan(BaseModel):
 
 # --- Стадия 6: манифест сборки (вход hyperframes) -------------------------------
 class CaptionStyle(BaseModel):
-    words_on_screen: int = Field(3, ge=2, le=5, description="Слов на экране одновременно")
+    words_on_screen: int = Field(3, ge=2, le=5, description="Слов на экране одновременно (максимум)")
+    max_chars: int = Field(24, ge=12, le=40, description=(
+        "Жёсткий кап по символам на чанк субтитра (с пробелами) — длинные слова (PL и др.) иначе "
+        "переносят чанк на вторую строку; портировано из ../creative production scheme (аудит E4)"))
     karaoke: bool = True
     safe_zone: Literal["lower_third"] = "lower_third"
 
@@ -93,6 +96,18 @@ class QAReport(BaseModel):
     checks: List[QACheck] = Field(..., description="hook_match, no_static_gt_3s, safe_zones, disclaimer, pacing")
     notes: List[str] = Field(default_factory=list)
     blame_stage: str = Field("", description="Куда вернуть при fail: scriptwriter|visual|assembly")
+
+
+# --- Стадия 8: пакет публикации (YouTube) ---------------------------------------
+class PublishPackage(BaseModel):
+    """Портировано 2026-07-05 из `../creative production scheme/autopilot_factory/schemas.py` —
+    у нас этой стадии не было вообще, метаданные ни для одного ролика не готовились."""
+    title: str = Field(..., max_length=100, description="YouTube title, язык канала, с ключевым словом темы")
+    description: str = Field(..., description=(
+        "3-5 коротких абзацев на языке канала: раскрытие темы, практический вывод, "
+        "призыв поделиться/подписаться, обязательный дисклеймер канала последним абзацем"))
+    hashtags: List[str] = Field(..., min_length=3, max_length=6, description=(
+        "3-6 хэштегов языка канала, первые — topic-specific, включая #Shorts"))
 
 
 __all__ = [

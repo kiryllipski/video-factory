@@ -10,18 +10,33 @@
 orchestration/            # build-time: раннеры, роли, ресёрч (есть)
   gemini_agent.py         # текстовые саб-агенты (есть)
   image_agent.py          # генерация кадров, замена MCP nano-banana (есть)
+  idea_miner.py           # майнер тем: autocomplete + YouTube Data API (outlier/top) + LLM-ранжирование (есть)
+  idea_backlog/*.json     # результаты idea_miner: ранжированные бэклоги тем по каналам
   roles/*.md              # системные промпты build-time (есть)
-  research/*.md           # сохранённые своды-принципы (есть)
+  research/*.md           # сохранённые своды-принципы (есть; R54/R55 — запуск faceless + инструменты идей)
 autopilot_factory/        # runtime-конвейер (СТРОИМ)
   engine.py               # оркестратор одного ролика (стадии ниже)
   cost_tracker.py         # учёт токенов по шагам (раннеры уже умеют писать в него)
   prompts/*.md            # runtime-роли: scriptwriter, compliance, visual, qa...
   schemas.py              # Pydantic-контракты между стадиями
   channels/               # по каналу: studio_context.md + brand.json + media_plan.md
-    biz_failures/ psychology/ wealth_viz/
-  runs/<date>_<slug>/     # артефакты ролика: script.json, frames/, audio/, captions, out.mp4, cost.json
+    biz_failures/ psychology/ wealth_viz/ vitallogic_bad_pl/
+  runs/<channel>/<date>_<slug>/  # артефакты ролика: script.json, frames/, audio/, captions, out.mp4, cost.json
+  publishers/youtube.py   # автопостинг YouTube Data API v3 (есть, портировано 2026-07-10)
+  tokens/<channel>.json   # OAuth-токен на канал (gitignored, не коммитится)
 ```
-Источник правды для каждого ролика — папка `runs/<...>`: всё воспроизводимо и логируемо.
+Прогоны разложены по каналам (реорганизовано 2026-07-04 — были общей кучей). Источник правды
+для каждого ролика — папка `runs/<channel>/<...>`: всё воспроизводимо и логируемо.
+
+**Хранение готовых видео (с 2026-07-07):** `runs/<channel>/<...>` остаётся рабочей копией прогона
+(script/frames/audio/hf/json) локально на диске Mac. Финальный `out.mp4` дополнительно копируется
+(не переносится) стадией 6 во внешнее хранилище:
+`/Users/kirillipski/Library/Mobile Documents/com~apple~CloudDocs/external storage/video/0.5/<channel>/<date>_<slug>/out.mp4`
+(iCloud — освобождает диск от накопления финальных роликов). Путь переопределяется переменной
+окружения `VIDEO_DELIVERY_ROOT`. Копирование делает `engine.deliver()`, вызывается из
+`engine.produce()` и `.claude/skills/video-factory/scripts/build_media.py`. Все ролики, собранные
+до этой даты (~1.9GB, 21 прогон), перенесены (не скопированы) из `runs/` в это хранилище целиком
+вместе с промежуточными артефактами — для них рабочая копия в `runs/` больше не существует.
 
 ## 2. Контракты данных (Pydantic, `schemas.py`)
 
@@ -44,10 +59,14 @@ autopilot_factory/        # runtime-конвейер (СТРОИМ)
  4. images         image_agent.py    → frames/*.png (ВСЕГДА img = Nano Banana 2; refs для консистентности)
  5. audio          TTS + музыка/SFX  → audio/voice.wav (+bgm) — провайдер по R09 (EN)
  6. assembly       hyperframes/ffmpeg→ out.mp4 (Ken Burns, субтитры-караоке в safe-зоне, плашки)
+                                     → копия out.mp4 в DELIVERY_ROOT (iCloud, см. §1)
  7. qa             pro               → QAReport; fail → возврат на стадию-виновника
- 8. (Фаза 2+) distribution/analytics — вне ядра рендера
+ 8. metadata       Claude (текст)    → publish_package.json (PublishPackage: title/description/hashtags)
+ 9. publish        publishers/youtube.py → videos.insert (private/unlisted/public, опц. publishAt)
 ```
 Каждая стадия пишет артефакт в `runs/<...>` и стоимость в `cost.json`. Падение на стадии N не теряет 1..N-1.
+Стадия 9 — видимое вовне действие (публикует на реальный канал), запускается только по явному
+подтверждению владельца, не автоматически по завершении сборки. Детали токенов/каналов — §7.
 
 ## 4. Сборка видео — РЕШЕНО: hyperframes (v0.7.22) как слой сборки
 
@@ -114,3 +133,42 @@ autopilot_factory/        # runtime-конвейер (СТРОИМ)
   старое поведение (`on_screen_text` на весь бит), если whisper недоступен (`--optional` → `[]`).
   Проверено рендером двух реальных битов (`runs/2026-07-03_kodak-...`) — тайминг совпадает с речью,
   на экране одновременно 2–3 слова вместо всего предложения.
+
+## 7. Публикация (YouTube Data API v3) — `autopilot_factory/publishers/youtube.py`
+
+Портировано 2026-07-10 из `../creative production scheme` — это реальный механизм, которым уже
+публиковался @VitalLogic-nutriFlow (см. историю экспериментов там же). Адаптирован под конвенции
+этого репо: видео берётся из `<run_dir>/out.mp4` (не `final.mp4`), `categoryId` по умолчанию
+`27` (Education, не мусорный `22` — см. `research/51`), `defaultLanguage` берётся по каналу
+(`pl` для vitallogic_bad_pl, `en` для остальных) или флагом `--lang`.
+
+- **Мультиканальность:** один Gmail-аккаунт может владеть несколькими YouTube-каналами (brand
+  accounts) — OAuth привязывается к конкретному каналу на экране согласия. Токен хранится отдельно
+  на канал: `autopilot_factory/tokens/<channel_label>.json` (gitignored). Уже авторизован
+  `vitallogic_bad_pl` (реальный канал VitalLogic, 38 подписчиков на момент переноса). Для
+  biz_failures/psychology/wealth_viz нужна разовая `auth` — но аккаунты этих каналов ещё не
+  созданы владельцем.
+- **Команды:**
+  `youtube.py auth --channel <label> --client-secret client_secret.json` — разовая авторизация.
+  `youtube.py whoami --channel <label>` — read-only проверка токена, без публикации.
+  `youtube.py upload --channel <label> --run <run_dir> [--privacy private|unlisted|public] [--publish-at <RFC3339 UTC>] [--lang pl|en]` — заливка.
+  `youtube.py retry-pending --channel <label>` — дозаливка роликов, упавших на суточном лимите канала.
+- **Отложенная публикация:** `--publish-at` заливает ролик как `private`, YouTube сам делает его
+  `public` в указанный момент (UTC). Так строится план публикаций на неделю вперёд одним прогоном аплоадов.
+- **Раскрытие AI (обязательно):** `status.containsSyntheticMedia=true` ставится на `videos.insert`
+  (дефолт вкл, `--no-synthetic` отключает) — кадры Nano Banana + голос TTS фотореалистичны/синтетичны,
+  YouTube требует пометку и с мая 2026 авто-детектит нераскрытое. Правка УЖЕ загруженных (`videos.update`)
+  требует scope `youtube.force-ssl` — старые токены без него, нужен повторный `auth` (или ручной тумблер
+  «Altered content» в Studio).
+- **Перенос в iCloud после заливки:** успешная загрузка перемещает весь прогон в
+  `VIDEO_DELIVERY_ROOT/<channel>/<run>/` (`_archive_to_icloud`, дефолт вкл, `--no-archive` отключает) —
+  локально загруженное не держим (договорённость 2026-07-10). Переиспользованный из iCloud прогон — no-op.
+- **Мягкая проверка перед заливкой:** `publishers/prepublisher.py` (тоже портирован) — не блокирует,
+  только пишет `<run_dir>/pre_publish_log.json` (размер видео, вертикальность 9:16, длительность
+  Shorts-диапазона, наличие/длина title-description-hashtags). PL-специфичные wellness-проверки
+  (дисклеймер, запрещённые claim-слова) включаются только при `lang=pl`.
+- **Обложка:** если в `<run_dir>/thumbnail.jpg` есть файл — заливается через `thumbnails.set`;
+  требует верифицированного номера телефона на канале, иначе тихо пропускается с warning в
+  `post_result.json` (см. BACKLOG.md — верификация VitalLogic отложена, номера исчерпаны).
+- **Не автоматизировано намеренно:** ничего не вызывает `upload` само по себе после сборки —
+  публикация видима вовне (на реальном канале), поэтому всегда требует явного go от владельца.
