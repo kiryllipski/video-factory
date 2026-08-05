@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import sys
 import json
+import random
 import shutil
 import argparse
 import datetime
@@ -72,6 +73,7 @@ import assembly                                               # noqa: E402
 
 PROMPTS = Path(__file__).resolve().parent / "prompts"
 CHANNELS = Path(__file__).resolve().parent / "channels"
+LEARNING = Path(__file__).resolve().parent / "learning"
 
 # Голос/подача/скорость озвучки по каналу (Gemini TTS).
 # "tired"/"measured pace"/"calm" в style модель воспринимает буквально и говорит медленно —
@@ -92,10 +94,29 @@ def _channel_ctx(channel: str) -> str:
     return (CHANNELS / channel / "studio_context.md").read_text(encoding="utf-8")
 
 
+def _learnings_ctx(channel: str) -> str:
+    """Закрытые гипотезы обучающего контура (learning_loop.py) — выводы, которые должны
+    менять следующий сценарий, а не оседать декоративно в HYPOTHESES.md."""
+    path = LEARNING / "learnings.json"
+    if not path.exists():
+        return ""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    entries = [e for e in data.get("entries", []) if e.get("channel", channel) == channel]
+    if not entries:
+        return ""
+    lines = [f"- [{e['id']}] {e['insight']} → {e['how_to_apply']}" for e in entries]
+    return "LEARNINGS (проверенные выводы прошлых роликов, применяй по умолчанию):\n" + "\n".join(lines)
+
+
 # --- Стадия 1: сценарий ---------------------------------------------------------
 def write_script(channel: str, topic: str, rubric: str, hook_formula: str) -> schemas.Script:
     ctx = _channel_ctx(channel)
-    user = f"STUDIO_CONTEXT:\n{ctx}\n\nTOPIC: {topic}\nRUBRIC: {rubric}\nHOOK_FORMULA: {hook_formula}"
+    learnings = _learnings_ctx(channel)
+    blocks = [f"STUDIO_CONTEXT:\n{ctx}"]
+    if learnings:
+        blocks.append(learnings)
+    blocks.append(f"TOPIC: {topic}\nRUBRIC: {rubric}\nHOOK_FORMULA: {hook_formula}")
+    user = "\n\n".join(blocks)
     data = run_structured("flash35", system=_role("scriptwriter"), user=user,
                           schema=schemas.Script, temperature=1.0)
     return schemas.Script(**data)
@@ -269,9 +290,22 @@ def synth_audio(channel: str, script: schemas.Script, out_dir: Path):
 
 
 # --- Стадия 6: сборка (hyperframes → немой mp4 → мукс озвучки) -------------------
+def _channel_bgm(channel: str) -> Path | None:
+    """v4 (владелец 2026-08-04): случайный трек из пула channels/<ch>/assets/bgm/ — один
+    трек навсегда звучал одинаково на каждом ролике. Настроение пула держит бренд, конкретный
+    файл внутри — ротируется. Нет файлов/канала → None (сборка без музыки, прежнее поведение)."""
+    if not channel:
+        return None
+    bgm_dir = CHANNELS / channel / "assets" / "bgm"
+    if not bgm_dir.is_dir():
+        return None
+    tracks = [p for p in sorted(bgm_dir.iterdir()) if p.suffix.lower() in (".wav", ".mp3", ".m4a", ".flac")]
+    return random.choice(tracks) if tracks else None
+
+
 def assemble(plan: schemas.FramePlan, script: schemas.Script, frames: list[Path],
              durations: list[float], beat_words: list[list[dict]], voice_wav: Path,
-             out_mp4: Path, work_dir: Path) -> Path:
+             out_mp4: Path, work_dir: Path, channel: str = "", skin: str = "photo") -> Path:
     # субтитры — пословные (whisper-тайминг), группами по CaptionStyle.words_on_screen;
     # если для бита распознавание не удалось — фолбэк на on_screen_text на весь бит.
     fallback_captions = [(b.on_screen_text or "") for b in script.beats]
@@ -281,9 +315,13 @@ def assemble(plan: schemas.FramePlan, script: schemas.Script, frames: list[Path]
     # поля — фолбэк на on_screen_text первого бита (кадр-0 = «обложка» в ленте Shorts).
     headline = (getattr(script, "poster_text", "") or "").strip() or \
                (script.beats[0].on_screen_text or "").strip()
+    # v3: финальная CTA-плашка (петля к постеру) + BGM-подложка канала.
+    cta_text = (getattr(script, "cta_plate", "") or "").strip()
+    # skin — типографический скин сборки (`photo` продакшен / `collage` эксперимент v5).
     return assembly.build_and_render(frames, beat_words, fallback_captions, durations, motions,
                                      cap_style, voice_wav, out_mp4, work_dir,
-                                     headline=headline)
+                                     headline=headline, cta_text=cta_text,
+                                     bgm_wav=_channel_bgm(channel), skin=skin)
 
 
 # --- Стадия 7: QA (advisory, gemini-2.5-flash, НЕ блокирует прогон) --------------
@@ -319,7 +357,8 @@ def produce(channel: str, topic: str, rubric: str, hook_formula: str, go: bool =
     frames = generate_frames(plan, run_dir / "frames")                             # стадия 4
     voice_wav, durations, beat_words = synth_audio(channel, script, run_dir / "audio")  # стадия 5
     out_mp4 = run_dir / "out.mp4"
-    assemble(plan, script, frames, durations, beat_words, voice_wav, out_mp4, run_dir / "hf")  # стадия 6
+    assemble(plan, script, frames, durations, beat_words, voice_wav, out_mp4, run_dir / "hf",
+             channel=channel)  # стадия 6
     deliver(run_dir, channel, out_mp4)  # копия финала в DELIVERY_ROOT (iCloud)
 
     # стадия 7 — QA ТОЛЬКО фиксирует выводы, не останавливает прогон

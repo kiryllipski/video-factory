@@ -37,7 +37,8 @@ def _pl_stopword_hits(script) -> list[str]:
     """Сканирует все текстовые поля сценария на стоп-слова. Возвращает список 'поле: слово'."""
     hits = []
     fields = [("hook", script.hook), ("cta", script.cta),
-              ("poster_text", getattr(script, "poster_text", ""))]
+              ("poster_text", getattr(script, "poster_text", "")),
+              ("cta_plate", getattr(script, "cta_plate", ""))]
     for i, b in enumerate(script.beats):
         fields.append((f"beats[{i}].voiceover", b.voiceover))
         fields.append((f"beats[{i}].on_screen_text", b.on_screen_text))
@@ -76,15 +77,34 @@ def main() -> int:
                           f"({script.total_dur_s:.1f}с) — расхождение >15%")
         # --- v2 (growth_plan_2026-07-13): постер + скорость хука ---
         poster = (getattr(script, "poster_text", "") or "").strip()
+        # слова = токены с буквами/цифрами (звёздочки-акценты и голая пунктуация не в счёт)
+        _words = lambda s: [w for w in s.replace("*", " ").split() if any(c.isalnum() for c in w)]
+        poster_words = len(_words(poster))
         if not poster:
             warnings.append("poster_text пуст — постер-заголовок первого кадра возьмётся из "
                             "beats[0].on_screen_text (для новых прогонов пиши poster_text: 3–6 слов)")
-        elif len(poster.split()) > 6:
-            warnings.append(f"poster_text длиннее 6 слов ({len(poster.split())}) — на постере "
+        elif poster_words > 6:
+            warnings.append(f"poster_text длиннее 6 слов ({poster_words}) — на постере "
                             f"первого кадра должен читаться за долю секунды")
-        if script.beats and script.beats[0].dur_s > 2.8:
-            warnings.append(f"первый бит {script.beats[0].dur_s:.1f}с — хук должен назвать "
-                            f"симптом за ≤1.5–2.5с; сократи voiceover первого бита")
+        # --- v3 (factory_audit_2026-07-15): упаковка первых 2 секунд + финальная плашка ---
+        if poster and poster_words > 4:
+            warnings.append(f"v3: poster_text {poster_words} слов — таргет ≤4 (крупнее шрифт = "
+                            f"читаемость в ленте); сожми до удара")
+        if poster and "*" not in poster:
+            warnings.append("v3: в poster_text нет акцент-слова (*słowo*) — выдели самое "
+                            "цепляющее слово, сборка подсветит его жёлтым")
+        cta_plate = (getattr(script, "cta_plate", "") or "").strip()
+        if not cta_plate:
+            warnings.append("v3: cta_plate пуст — финальная плашка-вопрос (петля к постеру, "
+                            "толчок к комменту) не будет отрендерена")
+        elif len(_words(cta_plate)) > 5:
+            warnings.append(f"v3: cta_plate длиннее 5 слов — должен читаться мгновенно")
+        if script.beats and script.beats[0].dur_s > 2.2:
+            warnings.append(f"первый бит {script.beats[0].dur_s:.1f}с — v3: хук называет симптом "
+                            f"за ≤1.5–2.2с; сократи voiceover первого бита")
+        if not (22.0 <= script.total_dur_s <= 34.0):
+            warnings.append(f"v3: total_dur_s {script.total_dur_s:.0f}с вне таргета 22–32с "
+                            f"(пик completion Shorts 15–30с; edu допустим до ~34с при явном payoff)")
     except FileNotFoundError:
         errors.append("script.json не найден")
     except (ValidationError, json.JSONDecodeError) as e:

@@ -12,6 +12,7 @@ service-account*.json
 *_secret*
 *.credentials
 autopilot_factory/tokens/
+autopilot_factory/publishers/.slot_locks/
 
 # ─── Тяжёлые runtime-артефакты (видео/аудио/кадры, ~ГБ) ───────────────
 # Все прогоны фабрики: картинки, TTS, hyperframes render, готовые ролики

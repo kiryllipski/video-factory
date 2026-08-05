@@ -71,6 +71,95 @@ def _archive_to_icloud(run: Path, channel: str):
         pass
     return dest_dir
 
+# Каденс публикаций (research/53 — batch-публикация душит охват): 2/день, фиксированные слоты.
+# UTC-эквиваленты 06:00/14:00 Europe/Warsaw (CEST=UTC+2). Единственное место, где это число живёт —
+# раньше каждый вызывающий (люди/агенты/скрипты) пересчитывал слоты сам, независимо и по-разному
+# (см. STATUS.md §0г, 2026-07-27: обнаружено 16 задвоенных слотов из-за минимум 2 разных механизмов
+# подбора «следующего слота» — ни один не сверялся с реальным расписанием на YouTube). Теперь любой
+# вызов upload проверяется/подбирается ЖИВЫМ запросом к каналу — не локальным файлом/логом.
+CADENCE_SLOTS_UTC = [(4, 0), (12, 0)]  # (час, минута) UTC
+
+
+def _scheduled_occupied_utc(yt) -> set:
+    """Живой список уже занятых слотов публикации на канале: все видео privacyStatus=private
+    с выставленным publishAt (ещё не вышедшие в public). Источник истины — сам YouTube, не
+    publish_log.jsonl/upload_queue*.json (оба оказались ненадёжны: неполны, не гарантируют порядок,
+    не видят параллельные/чужие сессии)."""
+    ch = yt.channels().list(part="contentDetails", mine=True).execute()
+    uploads_pl = ch["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    ids = []
+    token = None
+    while True:
+        resp = yt.playlistItems().list(part="contentDetails", playlistId=uploads_pl,
+                                        maxResults=50, pageToken=token).execute()
+        ids += [i["contentDetails"]["videoId"] for i in resp["items"]]
+        token = resp.get("nextPageToken")
+        if not token:
+            break
+    occupied = set()
+    for i in range(0, len(ids), 50):
+        chunk = ids[i:i + 50]
+        r = yt.videos().list(part="status", id=",".join(chunk)).execute()
+        for it in r["items"]:
+            st = it["status"]
+            if st.get("privacyStatus") == "private" and st.get("publishAt"):
+                occupied.add(st["publishAt"])
+    return occupied
+
+
+def _next_free_slot_utc(occupied: set, not_before) -> str:
+    """Следующий свободный слот по каденсу CADENCE_SLOTS_UTC, начиная от `not_before` (datetime,
+    aware/UTC), пропуская всё, что есть в `occupied`. Возвращает RFC3339 UTC ('...Z')."""
+    import datetime as _dt
+    day = not_before.date()
+    # первая кандидат-дата — сегодняшний день not_before; если оба сегодняшних слота уже прошли,
+    # цикл ниже просто перейдёт на следующий день
+    while True:
+        for hh, mm in CADENCE_SLOTS_UTC:
+            cand = _dt.datetime(day.year, day.month, day.day, hh, mm, tzinfo=_dt.timezone.utc)
+            if cand < not_before:
+                continue
+            iso = cand.strftime("%Y-%m-%dT%H:%M:%SZ")
+            if iso not in occupied:
+                return iso
+        day = day + _dt.timedelta(days=1)
+
+
+# Файловый лок слотов — единственный сигнал, видимый МЕЖДУ процессами (в отличие от `occupied`,
+# который живёт в памяти одного процесса/батча). Закрывает race 2026-08-02 даже если `upload`
+# всё же вызван несколько раз отдельными процессами в обход upload-batch/рунбука: YouTube
+# индексирует uploads-плейлист с задержкой в секунды/минуты, поэтому между процессами нельзя
+# полагаться только на живой запрос к API. TTL нужен, чтобы лок от упавшего до insert прогона
+# не занимал слот навсегда — после протухания слот снова разрешён, а живой API-снимок к тому
+# моменту уже видит реально занятые слоты (несколько минут — с запасом больше, чем задержка
+# индексации).
+SLOT_LOCK_DIR = ROOT / "publishers" / ".slot_locks"
+SLOT_LOCK_TTL_SECONDS = 20 * 60
+
+
+def _reserve_slot_lock(channel: str, publish_at: str) -> bool:
+    """Атомарно бронирует `publish_at` на `channel`. True — слот наш, можно грузить. False — слот
+    только что забронирован другим процессом (или ещё не протух после предыдущей попытки) —
+    вызывающий должен взять следующий свободный слот."""
+    import time
+    lock_dir = SLOT_LOCK_DIR / channel
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_file = lock_dir / f"{publish_at.replace(':', '-')}.lock"
+    if lock_file.exists():
+        age = time.time() - lock_file.stat().st_mtime
+        if age > SLOT_LOCK_TTL_SECONDS:
+            lock_file.unlink(missing_ok=True)
+        else:
+            return False
+    try:
+        fd = os.open(str(lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        return True
+    except FileExistsError:
+        return False
+
+
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
@@ -111,7 +200,12 @@ def _load_creds(channel: str):
     tp = _token_path(channel)
     if not tp.exists():
         sys.exit(f"Нет токена для канала '{channel}'. Сначала: youtube.py auth --channel {channel} --client-secret <file>")
-    creds = Credentials.from_authorized_user_file(str(tp), SCOPES)
+    # scopes=None — читаем реально выданные scopes из самого файла токена, а не из текущего SCOPES.
+    # ВАЖНО (регрессия 2026-07-10, найдена 2026-07-15): если сюда передать SCOPES и в нём появится
+    # scope, которого не было при исходном auth (напр. добавили force-ssl задним числом), Google
+    # отклоняет refresh_grant с invalid_scope — токен перестаёт рефрешиться целиком, включая insert.
+    # Новый scope получают только новые токены через `auth` (свежий consent), не мутацией SCOPES.
+    creds = Credentials.from_authorized_user_file(str(tp), scopes=None)
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
         tp.write_text(creds.to_json(), encoding="utf-8")
@@ -237,8 +331,17 @@ def cmd_post_comments(args):
     print(f"[post-comments] опубликовано: {posted}; осталось в очереди: {len(remaining)}.")
 
 
-def cmd_upload(args):
-    _require_libs()
+def _upload_one(yt, args, occupied: set):
+    """Тело загрузки ОДНОГО ролика. `yt` и `occupied` приходят от вызывающего (общие на весь
+    батч) — НЕ создаются здесь заново. `occupied` мутируется на месте сразу после резолва слота,
+    ДО реального insert (см. cmd_upload_batch/cmd_retry_pending) — это закрывает race, найденный
+    2026-08-02: несколько `upload`-вызовов подряд (каждый в своём процессе, каждый со своим live-
+    запросом occupied-слотов) иногда выбирали ОДИН И ТОТ ЖЕ свободный слот, потому что YouTube
+    Data API индексирует uploads-плейлист аккаунта с задержкой в несколько секунд/минут после
+    insert — предыдущая загрузка ещё не видна в live-запросе следующего вызова. Один живой запрос
+    на батч + локальное бронирование слота сразу после резолва устраняет эту задержку как источник
+    коллизий внутри одного процесса; `_reserve_slot_lock` (файловый лок, см. выше) закрывает тот
+    же race и МЕЖДУ процессами, так что даже одиночные вызовы `upload` подряд теперь безопасны."""
     from googleapiclient.http import MediaFileUpload
     run = Path(args.run).resolve()
     video = Path(args.video) if args.video else (run / "out.mp4")
@@ -261,6 +364,40 @@ def cmd_upload(args):
     if "Shorts" not in tags:
         tags.append("Shorts")
 
+    # Разрешение слота публикации — ВСЕГДА против расписания канала, снятого живым запросом (не
+    # локальных файлов/логов, см. CADENCE_SLOTS_UTC выше), а не заново на каждый вызов: `occupied`
+    # приходит от вызывающего (один live-снимок на весь батч) и дополняется ЛОКАЛЬНО ниже сразу
+    # после резолва — раньше, чем реальный insert. Два режима:
+    #   --publish-at auto        → подобрать ближайший свободный слот по каденсу самому
+    #   --publish-at <RFC3339>   → использовать это время, но если оно уже занято другим private-
+    #                              видео — подвинуть на ближайший свободный по каденсу и предупредить
+    #                              (защита от рассинхрона между несколькими сессиями/агентами)
+    publish_at = getattr(args, "publish_at", None)
+    if publish_at:
+        import datetime as _dt
+        if publish_at == "auto":
+            not_before = _dt.datetime.now(_dt.timezone.utc)
+            publish_at = _next_free_slot_utc(occupied, not_before)
+            print(f"  [schedule] --publish-at auto → выбран свободный слот {publish_at}")
+        else:
+            not_before = _dt.datetime.strptime(publish_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=_dt.timezone.utc)
+            if publish_at in occupied:
+                requested = publish_at
+                publish_at = _next_free_slot_utc(occupied, not_before)
+                print(f"  [schedule] ⚠️ запрошенный слот {requested} уже занят другим роликом на канале — "
+                      f"сдвинул на {publish_at} (защита от наложений, см. STATUS.md §0г)")
+
+        # Кросс-процессная защита от гонки индексации YouTube playlist (2026-08-02): `occupied`
+        # синхронизирует слоты только внутри ОДНОГО процесса/батча. Файловый лок закрывает и
+        # случай отдельных процессов (`upload`, вызванный несколько раз подряд в обход
+        # upload-batch) — если слот только что забронирован другим процессом, берём следующий.
+        while not _reserve_slot_lock(args.channel, publish_at):
+            print(f"  [schedule] ⚠️ слот {publish_at} только что занят другим процессом — беру следующий свободный")
+            occupied.add(publish_at)
+            publish_at = _next_free_slot_utc(occupied, not_before)
+
+        occupied.add(publish_at)  # бронируем локально СРАЗУ — до insert, до того как API это увидит
+
     status = {
         "privacyStatus": args.privacy,             # private | unlisted | public
         "selfDeclaredMadeForKids": False,
@@ -272,9 +409,10 @@ def cmd_upload(args):
     }
     # Плановая публикация: при publishAt YouTube требует privacyStatus=private; в заданный момент
     # (RFC3339, UTC) ролик автоматически становится public. Док: videos.insert status.publishAt.
-    if getattr(args, "publish_at", None):
+    if publish_at:
         status["privacyStatus"] = "private"
-        status["publishAt"] = args.publish_at
+        status["publishAt"] = publish_at
+    args.publish_at = publish_at  # дальше по функции используется резолвленное значение
 
     body = {
         "snippet": {
@@ -290,7 +428,6 @@ def cmd_upload(args):
 
     sched = f" publishAt={args.publish_at}" if getattr(args, "publish_at", None) else ""
     print(f"[upload] канал='{args.channel}' lang={lang} category={args.category} privacy={status['privacyStatus']}{sched}\n  video: {video}\n  title: {title}")
-    yt = _service(args.channel)
     media = MediaFileUpload(str(video), chunksize=-1, resumable=True, mimetype="video/mp4")
     req = yt.videos().insert(part="snippet,status", body=body, media_body=media)
     resp = None
@@ -322,6 +459,19 @@ def cmd_upload(args):
               "channel_label": args.channel, "title": title}
     if getattr(args, "publish_at", None):
         result["publish_at"] = args.publish_at
+
+    # Верификация раскрытия AI (регрессия 2026-07-15): containsSyntheticMedia молча НЕ применяется
+    # на insert с одним youtube.upload scope (нужен youtube.force-ssl — как и для videos.update),
+    # без ошибки и без явного отказа в ответе — просто отсутствует в status. Не доверяем body,
+    # проверяем реальный resp.
+    requested_synthetic = bool(getattr(args, "synthetic", True))
+    actual_synthetic = resp.get("status", {}).get("containsSyntheticMedia")
+    result["synthetic_disclosure_requested"] = requested_synthetic
+    result["synthetic_disclosure_confirmed"] = bool(actual_synthetic)
+    if requested_synthetic and not actual_synthetic:
+        print("  [ai-disclosure] ⚠️ containsSyntheticMedia НЕ применилось (нужен scope "
+              "youtube.force-ssl — токен его не имеет, нужен повторный `auth`). "
+              "Ролик залит БЕЗ AI-пометки — патчить после re-auth.")
 
     # Кастомная обложка (если <run>/thumbnail.jpg сгенерирован). Требует
     # ВЕРИФИЦИРОВАННОГО канала — иначе API вернёт ошибку; в этом случае не падаем,
@@ -398,27 +548,76 @@ def cmd_upload(args):
             print(f"[archive] warning: не удалось перенести в iCloud ({e}); локальная копия сохранена.")
 
 
+def cmd_upload(args):
+    """Одиночная загрузка (ручной/внешний вызов). Свой live-снимок occupied; кросс-процессный
+    файловый лок (`_reserve_slot_lock`) защищает и от повторных вызовов `upload` подряд (в т.ч.
+    из разных процессов) — см. _upload_one. Для НЕСКОЛЬКИХ роликов подряд предпочитать
+    `upload-batch` всё равно стоит: один live-запрос на весь батч вместо одного на ролик."""
+    _require_libs()
+    yt = _service(args.channel)
+    occupied = _scheduled_occupied_utc(yt) if getattr(args, "publish_at", None) else set()
+    _upload_one(yt, args, occupied)
+
+
+def cmd_upload_batch(args):
+    """Грузит НЕСКОЛЬКО роликов ОДНИМ процессом: ОДИН live-запрос occupied-слотов в начале, затем
+    каждый следующий слот резолвится против набора, дополняемого ЛОКАЛЬНО сразу после резолва —
+    а не свежим live-запросом на каждый ролик. Это единственный правильный способ загрузить пачку
+    роликов с --publish-at auto; см. _upload_one за объяснением race, который это устраняет."""
+    _require_libs()
+    yt = _service(args.channel)
+    occupied = _scheduled_occupied_utc(yt)
+    runs = args.run
+    print(f"[upload-batch] {len(runs)} ролик(ов), канал='{args.channel}', "
+          f"уже занятых слотов на канале сейчас: {len(occupied)}")
+    for i, run in enumerate(runs, 1):
+        print(f"\n---- [{i}/{len(runs)}] {Path(run).name} ----")
+        one_args = argparse.Namespace(
+            channel=args.channel, run=run, video=None, privacy=args.privacy,
+            publish_at="auto", lang=args.lang, category=args.category,
+            synthetic=args.synthetic, no_archive=args.no_archive,
+        )
+        try:
+            _upload_one(yt, one_args, occupied)
+        except SystemExit as exc:
+            if exc.code == 2:
+                print(f"  [upload-batch] лимит канала исчерпан на «{Path(run).name}» — остальные "
+                      f"в батче тоже упадут, останавливаюсь здесь. Дозалить позже: retry-pending.")
+                break
+            raise
+
+
 def cmd_retry_pending(args):
-    """Дозаливка роликов, упавших на uploadLimitExceeded (см. upload_pending.json в run_dir)."""
+    """Дозаливка роликов, упавших на uploadLimitExceeded (см. upload_pending.json в run_dir).
+    Один live-снимок occupied НА КАНАЛ (не на ролик) — та же защита от race, что в upload-batch:
+    несколько роликов одного канала в этом вызове делят один снимок и локальные бронирования."""
     runs_dir = ROOT / "runs"
     pending_files = sorted(runs_dir.glob("*/*/upload_pending.json"))
+    if args.channel:
+        pending_files = [pf for pf in pending_files
+                          if json.loads(pf.read_text(encoding="utf-8")).get("channel") == args.channel]
     if not pending_files:
         print("[retry-pending] нет роликов с upload_pending=true.")
         return
     print(f"[retry-pending] найдено {len(pending_files)} ролик(ов) на дозаливку.")
+    _require_libs()
+    yt_by_channel: dict = {}
+    occupied_by_channel: dict = {}
     for pf in pending_files:
         run_dir = pf.parent
         pending = json.loads(pf.read_text(encoding="utf-8"))
-        if args.channel and pending.get("channel") != args.channel:
-            continue
+        ch = pending["channel"]
+        if ch not in yt_by_channel:
+            yt_by_channel[ch] = _service(ch)
+            occupied_by_channel[ch] = _scheduled_occupied_utc(yt_by_channel[ch])
         print(f"\n---- дозаливаю {run_dir.name} ----")
         upload_args = argparse.Namespace(
-            channel=pending["channel"], run=str(run_dir), video=None,
+            channel=ch, run=str(run_dir), video=None,
             privacy=pending.get("privacy", "private"), publish_at=pending.get("publish_at"),
             lang=None, category="27", synthetic=True, no_archive=False,
         )
         try:
-            cmd_upload(upload_args)
+            _upload_one(yt_by_channel[ch], upload_args, occupied_by_channel[ch])
         except SystemExit as exc:
             if exc.code == 2:
                 print(f"  [retry-pending] всё ещё лимит — попробуй позже: {run_dir.name}")
@@ -447,13 +646,31 @@ def main():
     u.add_argument("--lang", default=None, help="pl | en (по умолчанию берётся из CHANNEL_LANG по --channel)")
     u.add_argument("--category", default="27", help="YouTube categoryId (27=Education, дефолт)")
     u.add_argument("--publish-at", dest="publish_at", default=None,
-                   help="Запланировать авто-публикацию: RFC3339 UTC, напр. 2026-07-11T06:00:00Z "
-                        "(ролик заливается private и сам станет public в этот момент)")
+                   help="Запланировать авто-публикацию. 'auto' — сам подберёт ближайший свободный "
+                        "слот по каденсу 2/день 06:00+14:00 Warsaw живым запросом к каналу "
+                        "(рекомендуется). Либо RFC3339 UTC, напр. 2026-07-11T06:00:00Z — если этот "
+                        "слот уже занят другим private-видео на канале, будет автоматически сдвинут "
+                        "на ближайший свободный (защита от наложений, см. STATUS.md §0г).")
     u.add_argument("--no-synthetic", dest="synthetic", action="store_false",
                    help="НЕ помечать как AI/synthetic (по умолчанию помечаем — кадры и голос AI)")
     u.add_argument("--no-archive", dest="no_archive", action="store_true",
                    help="НЕ переносить прогон в iCloud после загрузки (по умолчанию переносим)")
     u.set_defaults(func=cmd_upload, synthetic=True, no_archive=False)
+
+    b = sub.add_parser("upload-batch", help=(
+        "загрузить НЕСКОЛЬКО роликов ОДНИМ вызовом с --publish-at auto — предпочтительно при "
+        "загрузке >1 ролика подряд (один live-запрос occupied-слотов на весь батч вместо одного "
+        "на ролик); наложение слотов исключено в любом случае — см. _reserve_slot_lock"))
+    b.add_argument("--channel", required=True)
+    b.add_argument("--run", required=True, nargs="+",
+                    help="папки запусков (с out.mp4 и publish_package.json), через пробел, "
+                         "в порядке загрузки")
+    b.add_argument("--privacy", default="private", choices=["private", "unlisted", "public"])
+    b.add_argument("--lang", default=None)
+    b.add_argument("--category", default="27")
+    b.add_argument("--no-synthetic", dest="synthetic", action="store_false")
+    b.add_argument("--no-archive", dest="no_archive", action="store_true")
+    b.set_defaults(func=cmd_upload_batch, synthetic=True, no_archive=False)
 
     r = sub.add_parser("retry-pending", help="дозалить ролики с upload_pending=true (лимит сброшен)")
     r.add_argument("--channel", default=None, help="ограничить одним каналом (по умолчанию — все)")

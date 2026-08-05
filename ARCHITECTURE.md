@@ -41,11 +41,13 @@ autopilot_factory/        # runtime-конвейер (СТРОИМ)
 ## 2. Контракты данных (Pydantic, `schemas.py`)
 
 Стадии общаются строго через JSON-схемы (`run_structured`), не свободным текстом.
-`schemas.PIPELINE_VERSION` (сейчас **2.0**, growth_plan_2026-07-13) пишется в `run_meta.json`
+`schemas.PIPELINE_VERSION` (сейчас **3.0**, factory_audit_2026-07-15) пишется в `run_meta.json`
 (build_media) и `publish_log.jsonl` (publisher) — аналитика сравнивает версии по метрикам:
 - **Script** — `hook` (≤3с, v2: симптом в первых словах), `beats[]` (каждый: `voiceover`,
   `on_screen_text`, `visual_cue`, `dur_s`), `cta`, `total_dur_s`, `lang`,
-  **v2: `poster_text`** (3–6 слов — постер-заголовок первого кадра, рендерится сборкой с t=0).
+  **v2: `poster_text`** (постер-заголовок первого кадра, рендерится сборкой с t=0;
+  **v3: ≤4 слов, `*акцент*` подсвечивается жёлтым**), **v3: `cta_plate`** (финальная
+  плашка-вопрос ≤5 слов, стиль постера — петля «конец = начало»). v3-таргет длины 22–32с.
 - **ComplianceVerdict** — `pass: bool`, `fixes[]`, `cleaned_script`.
 - **FramePlan** — `frames[]` (каждый: `prompt`, `aspect="9:16"`, `ref_ids[]`, `motion` {ken_burns|zoom|parallax},
   `start_s`, `dur_s`), `grade`/`light`/`lens` (общие на ролик — для консистентности).
@@ -58,13 +60,18 @@ autopilot_factory/        # runtime-конвейер (СТРОИМ)
 
 ```
 тема (из channels/<niche>/media_plan.md)
- 1. scriptwriter   flash35 temp~1.0  → Script(JSON)
+ 1. scriptwriter   flash35 temp~1.0  → Script(JSON)          [для vitallogic пишет Claude, см. ниже]
  2. compliance     pro temp~0.2      → ComplianceVerdict (стоп-слова/claims/дисклеймеры по нише)
  3. visual_director pro              → FramePlan(JSON) (единый грейд/свет/линза на ролик)
  4. images         image_agent.py    → frames/*.png (ВСЕГДА img = Nano Banana 2; refs для консистентности)
- 5. audio          TTS + музыка/SFX  → audio/voice.wav (+bgm) — провайдер по R09 (EN)
- 6. assembly       hyperframes/ffmpeg→ out.mp4 (Ken Burns, субтитры-караоке в safe-зоне, плашки)
+ 4b. frame-QA v3   gemini-2.5-flash  → vision-чек каждого PNG (текст в кадре/рамки/анатомия/трети);
+                                      fail → точечная перегенерация кадра (≤2) → frame_qa.json
+ 5. audio          Gemini TTS per-beat → audio/voice.wav (тайминг слов без ASR)
+ 6. assembly       hyperframes/ffmpeg→ out.mp4 (Ken Burns + v3: hook_punch кадра-0, постер со
+                                      скримом и *акцентом*, CTA-плашка финала, BGM-подложка канала
+                                      из channels/<ch>/assets/bgm/ на −21дБ под голосом)
                                      → копия out.mp4 в DELIVERY_ROOT (iCloud, см. §1)
+ 6b. video-QA v3   gemini-2.5-flash  → vision-чек 3 стоп-кадров out.mp4 (advisory) → video_qa.json
  7. qa             pro               → QAReport; fail → возврат на стадию-виновника
  8. metadata       Claude (текст)    → publish_package.json (PublishPackage: title/description/hashtags)
  9. publish        publishers/youtube.py → videos.insert (private/unlisted/public, опц. publishAt)
@@ -72,6 +79,12 @@ autopilot_factory/        # runtime-конвейер (СТРОИМ)
 Каждая стадия пишет артефакт в `runs/<...>` и стоимость в `cost.json`. Падение на стадии N не теряет 1..N-1.
 Стадия 9 — видимое вовне действие (публикует на реальный канал), запускается только по явному
 подтверждению владельца, не автоматически по завершении сборки. Детали токенов/каналов — §7.
+
+**Рабочий путь для vitallogic (и рекомендованный для всех):** текстовые стадии 1–3/7/8 пишет
+Claude по скиллу `.claude/skills/video-factory` (Gemini-текст в engine.produce — legacy-путь
+для необслуживаемых каналов); медиа-стадии 4–6b — `scripts/build_media.py`. Бэкап v2 до правок —
+`autopilot_factory/_backup/pipeline_v2_2026-07-15/`; обоснование v3 —
+`channels/vitallogic_bad_pl/factory_audit_2026-07-15.md`.
 
 ## 4. Сборка видео — РЕШЕНО: hyperframes (v0.7.22) как слой сборки
 
@@ -102,6 +115,31 @@ autopilot_factory/        # runtime-конвейер (СТРОИМ)
   прогонов — `beats[0].on_screen_text`.
 - **Node 20+ сам:** `assembly._node22_env()` подсовывает nvm-Node≥20 subprocess'ам рендера —
   сборка больше не требует Node 22 в PATH оболочки (раньше падала под системным v18).
+
+**Скины сборки (2026-08-05, эксперимент v5-collage):** `assembly.build_and_render(..., skin=...)`
+и `engine.assemble(..., skin=...)` выбирают типографический слой поверх одного и того же
+таймлайна кадров:
+- `skin="photo"` — продакшен: белый текст, скрим-градиент, караоке жёлтым. **Дефолт; вывод
+  побайтово тот же, что до введения параметра** (регресс-тест 2026-08-05).
+- `skin="collage"` — печатный коллаж: заголовок/субтитры/CTA на рваной кремовой бумаге
+  (`clip-path`), караоке подсвечивается **маркером** (navy-блок + выворотка), а не цветом —
+  на бумаге ink и navy читаются одинаково тёмными; поверх всего статичные растр и зерно.
+  Наклон CTA-плашки задан в GSAP, не в CSS: твин пишет `transform` и затирает CSS-ный `rotate()`.
+  Оверлеи не анимированы намеренно — рендер идёт перемоткой по таймлайну, и не-GSAP анимация
+  была бы недетерминированной (см. §5 «Детерминизм»).
+Кто чем пользуется — таблица вариантов в `.claude/skills/video-factory/SKILL.md`.
+
+**Слоевая сборка (2026-08-05, T2 / `6.0-layers`)** — отдельный путь, не скин:
+`.claude/skills/video-factory/scripts/assembly_layers.py`. Вместо одного `<img>` на бит —
+плоский бумажный фон + несколько вырезок-слоёв, каждая со своим GSAP-треком (влёт/шлепок/
+оседание/покачивание) плюс процедурная бумажная «мебель» (обрывки, скотч, газетные полосы),
+рисуемая CSS'ом и потому бесплатная. Вырезки готовит `collage_elements.py`: «стикер-лист» из
+4–6 объектов = ОДНА генерация Nano Banana 2, нарезка локальная (цветовой ключ + связные
+компоненты, сведение к ячейкам сетки). Модуль аддитивный — `assembly.py` не правится,
+типографика переиспользуется импортом из него.
+Два правила, каждое найдено рендером и зашитое в код: альфа обнуляется вне жёсткой маски
+компонента (иначе полупрозрачный прямоугольный ореол вокруг вырезки), и хотя бы один элемент
+бита обязан быть виден с его первого кадра (иначе доли секунды голого фона на стыке).
 
 ## 5. Принципы реализации
 
@@ -180,6 +218,14 @@ autopilot_factory/        # runtime-конвейер (СТРОИМ)
   `title_template` — по ним `orchestration/analytics_report.py` сравнивает версии/шаблоны.
 - **Отложенная публикация:** `--publish-at` заливает ролик как `private`, YouTube сам делает его
   `public` в указанный момент (UTC). Так строится план публикаций на неделю вперёд одним прогоном аплоадов.
+- **Защита от наложения слотов (2026-07-27):** `--publish-at auto` подбирает ближайший свободный слот
+  по каденсу 2/день (06:00+14:00 Warsaw = 04:00/12:00 UTC) **живым запросом к каналу**
+  (`_scheduled_occupied_utc` — все `private`-видео с `publishAt`), а не по локальным файлам. Даже при
+  явном `--publish-at <время>` инструмент проверяет коллизию и сдвигает при необходимости. Причина:
+  найдено 8+ роликов, задвоенных на одно время — минимум 2 независимых механизма (очередь-файл,
+  логика «последняя строка publish_log.jsonl») подбирали слот независимо, не сверяясь с реальным
+  расписанием. `publish_log.jsonl`/`upload_queue*.json` теперь только для истории/аналитики, не для
+  выбора слота — не доверять им как источнику «что уже занято».
 - **Раскрытие AI (обязательно):** `status.containsSyntheticMedia=true` ставится на `videos.insert`
   (дефолт вкл, `--no-synthetic` отключает) — кадры Nano Banana + голос TTS фотореалистичны/синтетичны,
   YouTube требует пометку и с мая 2026 авто-детектит нераскрытое. Правка УЖЕ загруженных (`videos.update`)

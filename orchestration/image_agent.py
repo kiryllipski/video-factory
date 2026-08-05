@@ -82,19 +82,38 @@ def _ref_part(path: str):
 
 
 def generate_image(model: str, prompt: str, aspect_ratio: str = "9:16",
-                   out: str = "", refs=None) -> bytes:
+                   out: str = "", refs=None, image_size=None) -> bytes:
+    # NB: без `from __future__ import annotations` этот модуль исполняет аннотации на Python 3.9,
+    # где `str | None` — TypeError. Поэтому у image_size аннотации нет намеренно.
     """Генерирует один кадр. Возвращает байты изображения; если out задан — пишет файл.
 
     refs: список путей к референсным изображениям (для консистентности персонажа/стиля, до 14).
+    image_size: "1K" | "2K" | "4K" (строго с ЗАГЛАВНОЙ K — «1k» API отклоняет). None = дефолт
+        модели (1K) и прежнее поведение. Нужен там, где кадр потом РЕЖЕТСЯ на части и куски
+        масштабируются вверх: «стикер-лист» v6-layers на 1K даёт объект ~400px, который на
+        холсте 1080 растягивается до ~650px и мылится (2026-08-05).
     """
     contents = []
     for r in (refs or []):
         contents.append(_ref_part(r))
     contents.append(prompt)
 
+    img_cfg = {"aspect_ratio": aspect_ratio}
+    if image_size:
+        img_cfg["image_size"] = image_size
+    try:
+        image_config = types.ImageConfig(**img_cfg)
+    except Exception:
+        # google-genai 1.47 (стоит сейчас) знает у ImageConfig только aspect_ratio; image_size
+        # появился позже. Не роняем прогон и не тянем апгрейд SDK ради одного поля — молча
+        # откатываемся на дефолтное разрешение модели (1K). Когда SDK обновят, параметр
+        # заработает сам. Апгрейд SDK — отдельная задача с широким радиусом (TTS, ресёрч, QA).
+        image_config = types.ImageConfig(aspect_ratio=aspect_ratio)
+        if os.environ.get("IMAGE_AGENT_VERBOSE"):
+            print(f"[image_agent] image_size={image_size} не поддержан этой версией SDK — 1K")
     config = types.GenerateContentConfig(
         response_modalities=["IMAGE"],
-        image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
+        image_config=image_config,
     )
     mid = resolve_image_model(model)
 
@@ -151,6 +170,8 @@ def main():
     p.add_argument("--prompt", help="промпт: текст или путь к файлу")
     p.add_argument("--aspect", default="9:16", help="соотношение сторон (9:16 по умолчанию)")
     p.add_argument("--ref", action="append", default=[], help="референс-изображение (можно повторять)")
+    p.add_argument("--size", default=None, choices=["1K", "2K", "4K"],
+                   help="разрешение (по умолчанию дефолт модели = 1K)")
     p.add_argument("--out", required=False, help="путь для PNG (обязателен в CLI)")
     p.add_argument("--list-models", action="store_true")
     args = p.parse_args()
@@ -164,10 +185,12 @@ def main():
 
     prompt = _read_prompt(args.prompt)
     t0 = time.time()
-    data = generate_image(args.model, prompt, aspect_ratio=args.aspect, out=args.out, refs=args.ref)
+    data = generate_image(args.model, prompt, aspect_ratio=args.aspect, out=args.out,
+                          refs=args.ref, image_size=args.size)
     dt = time.time() - t0
     print(f"[ok] {resolve_image_model(args.model)} -> {args.out} "
-          f"({dt:.1f}s, {len(data)} bytes, {args.aspect}, refs={len(args.ref)})")
+          f"({dt:.1f}s, {len(data)} bytes, {args.aspect}, size={args.size or 'default'}, "
+          f"refs={len(args.ref)})")
 
 
 if __name__ == "__main__":
