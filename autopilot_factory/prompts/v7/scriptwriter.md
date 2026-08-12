@@ -105,7 +105,7 @@ I tu zaczyna się problem.»
 | `callout` | короткая ударная фраза-плашка | `label` (можно `*акцент*`) |
 | `stamp` | вердикт: `MIT`, `FAKT`, `NIE` | `value` |
 | `timeline` | 3–4 отметки по времени | `label`, `items` |
-| `source` | атрибуция под утверждением | `label` («EFSA», «badanie 2024») |
+| `source` | **откуда** взято утверждение | `label` — только источник: «EFSA», «norma EFSA», «badania biodostępności», «dane producenta». НЕ сам факт и не оценка |
 
 **Правила:**
 - Оверлеи минимум на **35% битов** — иначе QA не пропустит ролик.

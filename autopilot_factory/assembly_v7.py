@@ -292,7 +292,11 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats):
         elif kind == "callout":
             body = f'<div class="cotext">{_accent_html(ov.label or ov.value)}</div>'
         elif kind == "stamp":
-            body = f'<div class="stamptext">{escape(ov.value or ov.label)}</div>'
+            # Кегль от длины: «NIE» и «MIEJSCE 3» — разной ширины, фиксированные 112px
+            # обрезали длинный вариант об правый край (поймано на прогоне 2026-08-12).
+            txt = (ov.value or ov.label).strip()
+            sfs = 112 if len(txt) <= 5 else (88 if len(txt) <= 9 else 68)
+            body = f'<div class="stamptext" style="font-size:{sfs}px">{escape(txt)}</div>'
             tweens.append(f'tl.fromTo("#{oid}",{{scale:2.1,opacity:0,rotation:-14}},'
                           f'{{scale:1,opacity:1,rotation:-9,duration:0.26,ease:"power4.out"}},'
                           f'{start + 0.06:.3f});')
@@ -392,9 +396,11 @@ background:radial-gradient(120% 78% at 50% 42%,rgba(0,0,0,0) 44%,rgba(4,8,14,.52
 .cap{{position:absolute;left:70px;right:{SAFE_RIGHT + 20}px;bottom:{SAFE_BOTTOM}px;text-align:center;
 color:#fff;font-size:67px;font-weight:800;line-height:1.14;letter-spacing:-0.5px;
 text-shadow:0 4px 24px rgba(0,0,0,.85),0 0 2px rgba(0,0,0,.9)}}
-.word{{display:inline-block;margin-right:.26em}}
+.word{{display:inline-block;margin-right:.34em}}
 .word:last-child{{margin-right:0}}
-.word.emph{{font-weight:900}}
+/* transform:scale ударного слова не занимает места в потоке и наезжает на соседнее —
+   компенсируем боковыми полями (поймано на прогоне 2026-08-12: «problemyżołądkowe») */
+.word.emph{{font-weight:900;padding:0 .10em;margin-right:.42em}}
 
 /* постер кадра-0 */
 .headline{{position:absolute;left:56px;right:56px;top:{SAFE_TOP + 60}px;text-align:center;color:#fff;
@@ -446,7 +452,7 @@ box-shadow:0 14px 40px rgba(0,0,0,.55);letter-spacing:-1px}}
 
 .ov-stamp{{top:700px}}
 .ov-stamp .stamptext{{display:inline-block;border:11px solid #FF5B47;color:#FF5B47;
-font-size:112px;font-weight:900;letter-spacing:4px;padding:14px 40px;border-radius:14px;
+font-weight:900;letter-spacing:4px;padding:14px 36px;border-radius:14px;max-width:100%;
 text-transform:uppercase;background:rgba(8,12,20,.34);
 text-shadow:0 4px 18px rgba(0,0,0,.7)}}
 

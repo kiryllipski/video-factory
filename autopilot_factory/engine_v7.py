@@ -152,7 +152,7 @@ def _script_user(channel: str, topic: str, fmt: str, extra: str = "") -> str:
     return "\n\n".join(blocks)
 
 
-def validate_script(sc: S.Script) -> list[str]:
+def validate_script(sc: S.Script, recent_openers: tuple[str, ...] = ()) -> list[str]:
     """Машинные гейты сценария. Всё, что здесь проверяется, раньше было просьбой в промпте
     и молча не выполнялось — см. аудит §1.3 (0% битов короче 2с) и §2.2 (0 оверлеев)."""
     errs: list[str] = []
@@ -217,15 +217,36 @@ def validate_script(sc: S.Script) -> list[str]:
     poster_words = len(sc.poster_text.replace("*", "").split())
     if poster_words > 4:
         errs.append(f"poster_text из {poster_words} слов, нужно ≤4")
+
+    # Самоповтор проверяем кодом, а не LLM-судьёй: на первом же прогоне 2026-08-12 судья
+    # «нашёл» совпадения, которых в STYLE_MEMORY не было. Механическая проверка не врёт.
+    first = (sc.hook.split() or [""])[0].strip("?,.!«»\"").lower()
+    if first and first in recent_openers:
+        errs.append(f"хук снова начинается со слова «{first}» — оно уже было в недавних выпусках")
     return errs
+
+
+def _recent_openers(channel: str) -> tuple[str, ...]:
+    runs = sorted((RUNS / channel).glob("*/script.json"), key=lambda p: p.stat().st_mtime,
+                  reverse=True)[:8]
+    out = []
+    for p in runs:
+        try:
+            h = (json.loads(p.read_text(encoding="utf-8")).get("hook") or "").split()
+        except Exception:
+            continue
+        if h:
+            out.append(h[0].strip("?,.!«»\"").lower())
+    return tuple(dict.fromkeys(out))
 
 
 def write_script(channel: str, topic: str, fmt: str) -> S.Script:
     user = _script_user(channel, topic, fmt)
+    openers = _recent_openers(channel)
     data = run_structured("pro", system=_role("scriptwriter"), user=user,
                           schema=S.Script, temperature=0.95)
     sc = S.Script(**data)
-    errs = validate_script(sc)
+    errs = validate_script(sc, openers)
     if errs:
         print(f"[script] гейты не пройдены ({len(errs)}), переписываю:")
         for e in errs:
@@ -237,7 +258,7 @@ def write_script(channel: str, topic: str, fmt: str) -> S.Script:
                               user=_script_user(channel, topic, fmt, fix),
                               schema=S.Script, temperature=0.8)
         sc = S.Script(**data)
-        errs2 = validate_script(sc)
+        errs2 = validate_script(sc, openers)
         if errs2:
             raise SystemExit("[script] сценарий не проходит гейты и после переписывания:\n" +
                              "\n".join(f"  · {e}" for e in errs2))
@@ -477,14 +498,42 @@ def produce(channel: str, topic: str, fmt: str = "", slug: str = "", go: bool = 
     return run_dir
 
 
+def rebuild(run_dir: Path, channel: str) -> Path:
+    """Пересобирает ролик из уже сохранённых артефактов прогона (script/frame_plan/frames/audio),
+    без единого обращения к API. Нужно, когда меняется только сборка — правка CSS, тайминга,
+    звука. Раньше такой правки не существовало как операции: любое изменение рендера означало
+    полный повторный прогон с повторной оплатой кадров."""
+    sc = S.Script(**json.loads((run_dir / "script.json").read_text(encoding="utf-8")))
+    plan = S.FramePlan(**json.loads((run_dir / "frame_plan.json").read_text(encoding="utf-8")))
+    frames = sorted((run_dir / "frames").glob("frame_*.png"))
+    if len(frames) != len(plan.frames):
+        raise SystemExit(f"[rebuild] кадров на диске {len(frames)}, в плане {len(plan.frames)}")
+    voice_wav, durs, beat_words = synth_audio(channel, sc, run_dir / "audio")  # всё из кэша
+    out_mp4 = run_dir / "out.mp4"
+    A.build_and_render(
+        frames, [(f.beat_from, f.beat_to) for f in plan.frames],
+        [f.motion for f in plan.frames], beat_words,
+        [b.on_screen_text for b in sc.beats], durs, sc.overlays,
+        [b.emphasis for b in sc.beats], voice_wav, out_mp4, run_dir / "hf",
+        headline=sc.poster_text, payoff_text=sc.payoff_card,
+        turn_beat_idx=sc.turn_beat_idx, bgm_wav=_channel_bgm(channel))
+    print(f"[rebuilt] {out_mp4}")
+    return out_mp4
+
+
 def main():
     p = argparse.ArgumentParser(description="engine_v7.py — оркестратор ролика v7")
     p.add_argument("--channel", default="vitallogic_bad_pl")
-    p.add_argument("--topic", required=True)
+    p.add_argument("--topic", default="")
     p.add_argument("--format", default="", help=f"один из: {', '.join(S.FORMAT_BRIEFS)}")
     p.add_argument("--slug", default="")
     p.add_argument("--go", action="store_true", help="запустить генерацию кадров/озвучки/сборку")
+    p.add_argument("--rebuild", default="", metavar="RUN_DIR",
+                   help="пересобрать ролик из артефактов прогона, без вызовов API")
     a = p.parse_args()
+    if a.rebuild:
+        rebuild(Path(a.rebuild), a.channel)
+        return
     produce(a.channel, a.topic, a.format, a.slug, go=a.go)
 
 

@@ -126,7 +126,10 @@ class Overlay(BaseModel):
     percent: Optional[int] = Field(None, ge=0, le=100, description="bar: заполнение шкалы, %")
     items: List[str] = Field(default_factory=list, max_length=4, description=(
         "list/timeline: 2-4 строки. Для list префикс '+' = галочка, '-' = крестик, иначе точка."))
-    winner: Literal["", "a", "b"] = Field("", description="versus: какая сторона выигрывает")
+    # "none" вместо пустой строки: Gemini structured output отклоняет пустой enum-вариант
+    # (400 INVALID_ARGUMENT: enum[0] cannot be empty) — поймано на первом живом прогоне.
+    winner: Literal["none", "a", "b"] = Field("none", description=(
+        "versus: какая сторона выигрывает; 'none' — вердикта нет"))
     # kind="source" — небольшая строка-атрибуция под утверждением («EFSA», «badanie 2024»).
     # Два эффекта сразу: YMYL-сигнал доверия (пункт из investigations/2026-08-06) и
     # micro-proofing из research/59 §2 — доказательство стоит рядом с фактом, а не в конце.
