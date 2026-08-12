@@ -371,9 +371,20 @@ _NEGATIVE = ("NEGATIVE: over-saturated, deep-fried colors, 3d render, plastic sk
              "it belongs to the object, never floats over the frame as an overlay.")
 
 
-def generate_frames(plan: S.FramePlan, out_dir: Path) -> list[Path]:
+def _vision_check(path: Path, poster: bool):
+    """Машинная проверка ПИКСЕЛЕЙ готового кадра (доли цента за вызов). Профиль `photo_v7`
+    отличается от продакшенного: печатный текст на этикетке разрешён, зато отдельно
+    проверяются осмысленность букв, целостность предмета и то, что объект не выселен за край
+    — то есть ровно те три дефекта, которые всплыли на первой партии v7."""
+    sys.path.insert(0, str(_ROOT / ".claude" / "skills" / "video-factory" / "scripts"))
+    from vision_qa import check_image
+    return check_image(path, poster=poster, profile="photo_v7")
+
+
+def generate_frames(plan: S.FramePlan, out_dir: Path, qa_frames: bool = True) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
+    report: list[dict] = []
     for i, fr in enumerate(plan.frames):
         p = out_dir / f"frame_{i:02d}.png"
         if p.exists() and p.stat().st_size > 1000:
@@ -385,7 +396,23 @@ def generate_frames(plan: S.FramePlan, out_dir: Path) -> list[Path]:
         prompt = (f"{fr.prompt}\nGRADE: {plan.grade}. LIGHT: {plan.light}. LENS: {plan.lens}.\n"
                   f"{_NEGATIVE}")
         generate_image("img", prompt, aspect_ratio="9:16", out=str(p), refs=refs)
+        # Точечная перегенерация: бракуется и переснимается ОДИН кадр, а не весь ролик.
+        for attempt in range(2 if qa_frames else 0):
+            try:
+                res = _vision_check(p, poster=(i == 0))
+            except Exception as e:
+                print(f"[frame-qa] пропущен для {p.name}: {e}")
+                break
+            if res.passed:
+                break
+            issues = "; ".join(res.issues)[:200]
+            print(f"[frame-qa] {p.name} брак ({attempt + 1}/2): {issues}")
+            report.append({"frame": i, "attempt": attempt + 1, "issues": res.issues})
+            generate_image("img", prompt, aspect_ratio="9:16", out=str(p), refs=refs)
         paths.append(p)
+    if report:
+        (out_dir.parent / "frame_qa.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return paths
 
 
@@ -451,6 +478,29 @@ def qa(channel: str, sc: S.Script, plan: S.FramePlan) -> S.QAReport:
     return S.QAReport(**data)
 
 
+DISCLAIMER_PL = ("Materiał ma charakter edukacyjny i nie zastępuje porady lekarza. "
+                 "Suplement diety.")
+
+
+def publish_package(channel: str, sc: S.Script) -> S.PublishPackage:
+    """Стадия 8: заголовок/описание/хэштеги/закреплённый комментарий.
+
+    Без этого пакета ролик физически нельзя залить: `publishers/youtube.py` читает
+    `publish_package.json` и без него падает. В первой версии v7 стадии не было вовсе —
+    ролики собирались, но оставались непубликуемыми."""
+    user = (f"STUDIO_CONTEXT:\n{_channel_ctx(channel)}\n\n"
+            f"SCRIPT_JSON:\n{sc.model_dump_json()}")
+    data = run_structured("pro", system=_role("publisher"), user=user,
+                          schema=S.PublishPackage, temperature=0.7)
+    pkg = S.PublishPackage(**data)
+    # Дисклеймер — юридическое требование канала, не полагаемся на модель.
+    if DISCLAIMER_PL not in pkg.description:
+        pkg.description = pkg.description.rstrip() + "\n\n" + DISCLAIMER_PL
+    if not any(h.lower() == "#shorts" for h in pkg.hashtags):
+        pkg.hashtags = (pkg.hashtags + ["#Shorts"])[:6]
+    return pkg
+
+
 def _channel_bgm(channel: str) -> Path | None:
     bgm_dir = CHANNELS / channel / "assets" / "bgm"
     if not bgm_dir.is_dir():
@@ -461,7 +511,8 @@ def _channel_bgm(channel: str) -> Path | None:
 
 
 # --- прогон ---------------------------------------------------------------------
-def produce(channel: str, topic: str, fmt: str = "", slug: str = "", go: bool = False) -> Path:
+def produce(channel: str, topic: str, fmt: str = "", slug: str = "", go: bool = False,
+            sfx_profile: str = A.DEFAULT_SFX_PROFILE) -> Path:
     fmt = pick_format(channel, fmt)
     slug = slug or re.sub(r"[^a-z0-9]+", "-", topic.lower()).strip("-")[:40]
     run_dir = RUNS / channel / f"{datetime.date.today()}_{slug}"
@@ -485,6 +536,14 @@ def produce(channel: str, topic: str, fmt: str = "", slug: str = "", go: bool = 
 
     plan = plan_frames(channel, sc)
     (run_dir / "frame_plan.json").write_text(plan.model_dump_json(indent=2), encoding="utf-8")
+
+    try:
+        pkg = publish_package(channel, sc)
+        (run_dir / "publish_package.json").write_text(pkg.model_dump_json(indent=2),
+                                                      encoding="utf-8")
+        print(f"[publish] «{pkg.title}»")
+    except Exception as e:
+        print(f"[publish] пакет публикации не собрался: {e}")
 
     try:
         report = qa(channel, sc, plan)
@@ -533,10 +592,12 @@ def produce(channel: str, topic: str, fmt: str = "", slug: str = "", go: bool = 
         [b.on_screen_text for b in sc.beats], durs, sc.overlays,
         [b.emphasis for b in sc.beats], voice_wav, out_mp4, run_dir / "hf",
         headline=sc.poster_text, payoff_text=sc.payoff_card,
-        turn_beat_idx=sc.turn_beat_idx, bgm_wav=_channel_bgm(channel))
+        turn_beat_idx=sc.turn_beat_idx, bgm_wav=_channel_bgm(channel),
+        sfx_profile=sfx_profile)
 
     (run_dir / "run_meta.json").write_text(json.dumps({
         "pipeline_version": S.PIPELINE_VERSION, "format": fmt,
+        "sfx_profile": sfx_profile,
         "built_at": datetime.datetime.now().isoformat(timespec="seconds"),
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[done] {out_mp4}")
@@ -663,7 +724,7 @@ def main():
     if a.rebuild:
         rebuild(Path(a.rebuild), a.channel, sfx_profile=a.sfx)
         return
-    produce(a.channel, a.topic, a.format, a.slug, go=a.go)
+    produce(a.channel, a.topic, a.format, a.slug, go=a.go, sfx_profile=a.sfx)
 
 
 if __name__ == "__main__":

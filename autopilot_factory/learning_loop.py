@@ -116,6 +116,31 @@ def extract_levers(run_dir: Path) -> Dict[str, Any]:
             "cta_plate": (script.get("cta_plate") or "").strip() or None,
             "avg_beat_s": round(sum(b.get("dur_s", 0) for b in beats) / len(beats), 2) if beats else None,
         })
+        # --- рычаги v7 (schemas_v7) ---------------------------------------------
+        # Без них когорту v7 не с чем сравнивать: именно формат, доля графики и наличие
+        # конкретики в payload — те ручки, которые v7 и крутит. У прогонов v1-v6 этих
+        # полей нет, и словарь просто не пополняется (обратная совместимость).
+        if script.get("format"):
+            overlays = script.get("overlays") or []
+            ov_beats = {o.get("beat_idx") for o in overlays if o.get("beat_idx") is not None}
+            durs = [b.get("dur_s", 0) for b in beats]
+            payload = (script.get("payload") or "")
+            lv.update({
+                "format": script.get("format"),
+                "payload": payload or None,
+                "payload_has_number": any(ch.isdigit() for ch in payload),
+                "overlays_count": len(overlays) or None,
+                "overlays_kinds": sorted({o.get("kind") for o in overlays if o.get("kind")}) or None,
+                "overlay_beat_share": round(len(ov_beats) / len(beats), 2) if beats else None,
+                "turn_beat_idx": script.get("turn_beat_idx"),
+                "turn_position_pct": (round(100 * script["turn_beat_idx"] / len(beats))
+                                      if beats and script.get("turn_beat_idx") is not None else None),
+                "payoff_card": (script.get("payoff_card") or "").strip() or None,
+                "short_beats_share": (round(sum(1 for d in durs if d <= 1.6) / len(durs), 2)
+                                      if durs else None),
+                "beat_dur_min": min(durs) if durs else None,
+                "beat_dur_max": max(durs) if durs else None,
+            })
 
     fp = _read_json(run_dir / "frame_plan.json") or {}
     if fp:
@@ -128,6 +153,15 @@ def extract_levers(run_dir: Path) -> Dict[str, Any]:
             "frames_count": len(frames) or None,
             "motions_distinct": sorted(set(motions)) or None,
         })
+        # v7: кадр покрывает диапазон битов, поэтому кадров меньше — само по себе
+        # `frames_count` больше не сравнимо между версиями, нужна ротация крупности.
+        if any(f.get("shot") for f in frames):
+            lv.update({
+                "shots_distinct": sorted({f["shot"] for f in frames if f.get("shot")}) or None,
+                "subjects_distinct": sorted({f["subject"] for f in frames if f.get("subject")}) or None,
+                "beats_per_frame": (round(sum(f.get("beat_to", 0) - f.get("beat_from", 0) + 1
+                                              for f in frames) / len(frames), 2) if frames else None),
+            })
 
     pkg = _read_json(run_dir / "publish_package.json") or {}
     if pkg:
@@ -144,6 +178,8 @@ def extract_levers(run_dir: Path) -> Dict[str, Any]:
     if meta:
         lv["pipeline_version"] = meta.get("pipeline_version")
         lv["built_at"] = meta.get("built_at")
+        if meta.get("sfx_profile"):
+            lv["sfx_profile"] = meta["sfx_profile"]
 
     cost = _read_json(run_dir / "cost.json") or {}
     if cost:
