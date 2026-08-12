@@ -191,6 +191,14 @@ def validate_script(sc: S.Script, recent_openers: tuple[str, ...] = ()) -> list[
     if any(o.beat_idx < len(sc.beats) and sc.beats[o.beat_idx].act == "hook"
            for o in sc.overlays):
         errs.append("в акте hook оверлеев быть не должно — там работает poster_text")
+    # `percent` — только длина заливки. Без явного `value` шкала подписывается процентом, и
+    # уровень ферритина 15 µg/l выходит на экран как «15%» (поймано на прогоне 2026-08-12).
+    for o in sc.overlays:
+        if o.kind == "bar" and not o.value.strip():
+            errs.append(f"bar на бите {o.beat_idx}: нужен value с единицей измерения "
+                        f"(«15 µg/l», «4%») — percent это только длина полоски")
+        if o.kind in ("stat", "versus") and not o.value.strip():
+            errs.append(f"{o.kind} на бите {o.beat_idx}: пустой value")
 
     low = sc.payload.lower()
     for v in _VAGUE_PL:
@@ -468,9 +476,34 @@ def produce(channel: str, topic: str, fmt: str = "", slug: str = "", go: bool = 
 
     try:
         report = qa(channel, sc, plan)
-        (run_dir / "qa.json").write_text(report.model_dump_json(indent=2), encoding="utf-8")
         failed = [c.name for c in report.checks if not c.passed]
-        print(f"[qa] passed={report.passed}" + (f" · провалено: {', '.join(failed)}" if failed else ""))
+        # Судья видит то, чего не видит код: скатился ли сценарий обратно в старый шаблон,
+        # настоящий ли поворот. Его вердикт возвращается сценаристу ОДИН раз и обязательно
+        # до генерации кадров — переписать текст стоит центы, перегенерировать кадры $0.3.
+        soft = {"not_a_clone", "turn_is_real", "overlays_add", "visual_not_literal",
+                "no_school_essay", "voice_persona", "payoff_card_is_conclusion"}
+        if set(failed) & soft:
+            print(f"[qa] замечания судьи ({', '.join(failed)}) — переписываю сценарий один раз")
+            notes = "\n".join(f"- {c.name}: {c.detail}" for c in report.checks if not c.passed)
+            fix = ("СУДЬЯ ОТКЛОНИЛ ПРЕДЫДУЩИЙ ВАРИАНТ. Исправь ИМЕННО это:\n" + notes +
+                   "\n\nОсобенно: если замечание про клон — смени УГОЛ ПОДАЧИ, а не слова.\n\n"
+                   f"ОТКЛОНЁННЫЙ ВАРИАНТ:\n{sc.model_dump_json()}")
+            data = run_structured("pro", system=_role("scriptwriter"),
+                                  user=_script_user(channel, topic, fmt, fix),
+                                  schema=S.Script, temperature=0.9)
+            cand = S.Script(**data)
+            if not validate_script(cand, _recent_openers(channel)):
+                sc = cand
+                (run_dir / "script.json").write_text(sc.model_dump_json(indent=2), encoding="utf-8")
+                plan = plan_frames(channel, sc)
+                (run_dir / "frame_plan.json").write_text(plan.model_dump_json(indent=2),
+                                                         encoding="utf-8")
+                report = qa(channel, sc, plan)
+                failed = [c.name for c in report.checks if not c.passed]
+            else:
+                print("[qa] переписанный вариант не прошёл машинные гейты — оставляю прежний")
+        (run_dir / "qa.json").write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        print(f"[qa] passed={report.passed}" + (f" · осталось: {', '.join(failed)}" if failed else ""))
     except Exception as e:
         print(f"[qa] пропущен: {e}")
 

@@ -40,7 +40,17 @@ _VERSIONS = {
         ("Технический хвост листа", "_SHEET_TECH"),
         ("Негатив-блок листа", "_SHEET_NEGATIVE"),
     ]),
+    # v7 живёт в autopilot_factory (полностью автономный прогон через engine_v7), а не в
+    # скиллe: текстовые стадии пишут Gemini-роли из prompts/v7/, поэтому снапшот должен
+    # брать и брифы форматов — они тоже уходят в модель как часть промпта.
+    "7.0": ("engine_v7", [
+        ("Негатив-блок кадра", "_NEGATIVE"),
+        ("Запрещённые обобщения в payload", "_VAGUE_PL"),
+    ]),
 }
+
+# Роли по версиям: v7 держит свои в подпапке, старые версии — в корне prompts/.
+_ROLE_DIRS = {"7.0": "v7"}
 
 # своды QA — общие для всех версий, но профиль зависит от стиля
 _QA_BLOCKS = [
@@ -78,12 +88,16 @@ def dump(version: str) -> Path:
         if val:
             out += [f"### {title}", "", _fence(val), ""]
 
-    roles = ROOT / "autopilot_factory" / "prompts"
+    if version == "7.0":
+        import schemas_v7 as _s7
+        out += ["## Брифы форматов (уходят в промпт сценариста)", ""]
+        for name, brief in _s7.FORMAT_BRIEFS.items():
+            out += [f"### `{name}`", "", _fence(brief), ""]
+
+    sub = _ROLE_DIRS.get(version, "")
+    roles = ROOT / "autopilot_factory" / "prompts" / sub
     if roles.is_dir():
-        out += ["## Runtime-роли Gemini (`autopilot_factory/prompts/`)", "",
-                "> В навыке video-factory текстовые стадии пишет Claude, и эти роли не "
-                "вызываются. Они остаются входом для `engine.produce()` — полностью "
-                "автономного прогона.", ""]
+        out += [f"## Runtime-роли Gemini (`autopilot_factory/prompts/{sub or ''}`)", ""]
         for f in sorted(roles.glob("*.md")):
             out += [f"### {f.name}", "", _fence(f.read_text(encoding='utf-8')), ""]
 
