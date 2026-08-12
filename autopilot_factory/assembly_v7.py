@@ -41,6 +41,13 @@ INK = "#0E1620"
 SAFE_TOP = 200
 SAFE_BOTTOM = 380
 SAFE_RIGHT = 120
+# Боковой отступ для ЦЕНТРИРОВАННОГО контента — симметричный, равный самому жёсткому
+# ограничению (правая колонка кнопок Shorts). Асимметричные отступы «слева 70, справа 140»
+# уводят блок на 35px влево от центра кадра: сам по себе он центрирован внутри своей
+# коробки, но коробка смещена. Замер 2026-08-12: постер и payoff-карточка (симметричные
+# отступы) стояли ровно, субтитры и графика — на −35px. Разнобой заметнее самого сдвига,
+# потому что постер и субтитр видны одновременно.
+SAFE_SIDE = SAFE_RIGHT
 
 _HF_JSON = {
     "$schema": "https://hyperframes.heygen.com/schema/hyperframes.json",
@@ -449,14 +456,17 @@ background-image:url("{_GRAIN_SVG}");background-size:260px 260px}}
 background:radial-gradient(120% 78% at 50% 42%,rgba(0,0,0,0) 44%,rgba(4,8,14,.52) 100%)}}
 
 /* субтитры: safe-зона снизу {SAFE_BOTTOM}px */
-.cap{{position:absolute;left:70px;right:{SAFE_RIGHT + 20}px;bottom:{SAFE_BOTTOM}px;text-align:center;
+.cap{{position:absolute;left:{SAFE_SIDE}px;right:{SAFE_SIDE}px;bottom:{SAFE_BOTTOM}px;text-align:center;
 color:#fff;font-size:67px;font-weight:800;line-height:1.14;letter-spacing:-0.5px;
 text-shadow:0 4px 24px rgba(0,0,0,.85),0 0 2px rgba(0,0,0,.9)}}
 .word{{display:inline-block;margin-right:.34em}}
-.word:last-child{{margin-right:0}}
 /* transform:scale ударного слова не занимает места в потоке и наезжает на соседнее —
    компенсируем боковыми полями (поймано на прогоне 2026-08-12: «problemyżołądkowe») */
 .word.emph{{font-weight:900;padding:0 .10em;margin-right:.42em}}
+/* Обнуление правого поля идёт ПОСЛЕ .word.emph: у них одинаковая специфичность, и при
+   обратном порядке ударное слово в конце строки сохраняло хвостовое поле — строка
+   уезжала влево на его величину. */
+.word:last-child,.word.emph:last-child{{margin-right:0}}
 
 /* постер кадра-0 */
 .headline{{position:absolute;left:56px;right:56px;top:{SAFE_TOP + 60}px;text-align:center;color:#fff;
@@ -467,7 +477,7 @@ background:linear-gradient(180deg,rgba(5,9,16,.72) 0%,rgba(5,9,16,.46) 54%,rgba(
 .hl{{color:var(--yellow)}}
 
 /* ---- слой информационной графики ---- */
-.ov{{position:absolute;left:80px;right:{SAFE_RIGHT + 30}px;top:820px;
+.ov{{position:absolute;left:{SAFE_SIDE + 20}px;right:{SAFE_SIDE + 20}px;top:820px;
 color:#fff;text-align:center}}
 .ov-stat .statnum{{font-size:232px;font-weight:900;line-height:.95;letter-spacing:-6px;
 color:var(--yellow);text-shadow:0 10px 40px rgba(0,0,0,.75)}}
