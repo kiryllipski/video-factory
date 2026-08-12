@@ -100,23 +100,34 @@ def _frame_clips(frame_spans, motions, beat_starts, beat_durs, total):
     моменты внутренних границ битов, куда сборка ставит punch-in: визуальное событие
     посреди длинного кадра, чтобы план не «застывал» (research/01: план ≤2.5с)."""
     clips, tweens, punches = [], [], []
+    # Границы кадров — по округлённым значениям, длительность = разница соседних границ.
+    # Независимое округление start и duration давало наложение соседних клипов в 1 мс
+    # (линтер: overlapping_clips_same_track, поймано 2026-08-12).
+    bounds = [round(beat_starts[bf], 3) for bf, _ in frame_spans]
+    bounds.append(round(beat_starts[frame_spans[-1][1]] + beat_durs[frame_spans[-1][1]], 3))
     for i, (b_from, b_to) in enumerate(frame_spans):
-        start = beat_starts[b_from]
-        end = beat_starts[b_to] + beat_durs[b_to]
-        dur = max(end - start, 0.4)
+        start = bounds[i]
+        dur = max(round(bounds[i + 1] - bounds[i], 3), 0.4)
+        # Кадр живёт в обёртке: основное движение анимирует <img>, толчок на границе бита —
+        # ОБЁРТКУ. Раньше и то и другое писало `scale` одного элемента, причём толчок
+        # относительными значениями (`+=0.035`). Относительный твин берёт базу в момент
+        # инициализации, а рендер идёт несколькими воркерами — холодный воркер стартовал с
+        # другого состояния, и один и тот же кадр выходил в двух разных положениях (рывок на
+        # стыке чанков). Поймано линтером hyperframes 2026-08-12: gsap_relative_value_second_writer.
         clips.append(
-            f'<img id="f{i}" class="clip frame" src="assets/frame{i}.png" '
-            f'data-start="{start:.3f}" data-duration="{dur:.3f}" data-track-index="1"/>'
+            f'<div id="fw{i}" class="clip fwrap" data-start="{start:.3f}" '
+            f'data-duration="{dur:.3f}" data-track-index="1">'
+            f'<img id="f{i}" class="frame" src="assets/frame{i}.png"/></div>'
         )
         mo = motions[i] if i < len(motions) else "ken_burns_in"
         tweens.append(_motion_tween(f"#f{i}", mo, start, dur))
-        # внутренние границы битов → короткий толчок масштаба поверх основного движения
         for b in range(b_from + 1, b_to + 1):
             t = beat_starts[b]
             punches.append(t)
             tweens.append(
-                f'tl.to("#f{i}",{{scale:"+=0.035",duration:0.16,ease:"power2.out"}},{t:.3f});'
-                f'tl.to("#f{i}",{{scale:"-=0.035",duration:0.5,ease:"power1.out"}},{t + 0.16:.3f});'
+                f'tl.fromTo("#fw{i}",{{scale:1}},{{scale:1.035,duration:0.16,'
+                f'ease:"power2.out"}},{t:.3f});'
+                f'tl.to("#fw{i}",{{scale:1,duration:0.5,ease:"power1.out"}},{t + 0.16:.3f});'
             )
     return clips, tweens, punches
 
@@ -325,12 +336,13 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats):
         else:
             tweens.append(f'tl.from("#{oid}",{{opacity:0,y:34,scale:0.94,duration:0.24,'
                           f'ease:"back.out(1.4)"}},{start + 0.05:.3f});')
+        # После фейда — явный `tl.set`: перемотка может встать ПОСЛЕ окна твина, и без
+        # жёсткого гашения элемент остаётся видимым (линтер: gsap_exit_missing_hard_kill).
         tweens.append(f'tl.to("#{oid}",{{opacity:0,duration:0.2,ease:"power1.in"}},'
-                      f'{start + dur - 0.2:.3f});')
-        if kind == "stamp":
-            sfx_marks.append((start + 0.05, "stamp"))
-        elif kind != "source":                     # атрибуция появляется беззвучно
-            sfx_marks.append((start + 0.05, "pop"))
+                      f'{start + dur - 0.2:.3f});'
+                      f'tl.set("#{oid}",{{opacity:0}},{start + dur:.3f});')
+        if kind != "source":                       # атрибуция появляется беззвучно
+            sfx_marks.append((start + 0.05, f"overlay:{kind}"))
     return clips, tweens, sfx_marks
 
 
@@ -348,13 +360,20 @@ def _headline_clip(text: str, dur: float):
              f'<div id="headline" class="clip headline" style="font-size:{fs}px" data-start="0.000" '
              f'data-duration="{dur:.3f}" data-track-index="4">{_accent_html(text.strip())}</div>']
     tweens = [f'tl.to("#headline",{{opacity:0,duration:{fade:.3f},ease:"power1.in"}},{dur - fade:.3f});',
-              f'tl.to("#hscrim",{{opacity:0,duration:{fade:.3f},ease:"power1.in"}},{dur - fade:.3f});']
+              f'tl.set("#headline",{{opacity:0}},{dur:.3f});',
+              f'tl.to("#hscrim",{{opacity:0,duration:{fade:.3f},ease:"power1.in"}},{dur - fade:.3f});',
+              f'tl.set("#hscrim",{{opacity:0}},{dur:.3f});']
     return clips, tweens
 
 
 def _payoff_clip(text: str, start: float, total: float):
-    """v7: финальная карточка с ВЫВОДОМ (не с вопросом). Полноэкранная бренд-плашка —
-    кадр, ради которого ролик сохраняют и на котором делают скриншот."""
+    """v7: финальная карточка с ВЫВОДОМ (не с вопросом) — кадр, ради которого ролик сохраняют.
+
+    Правка владельца 2026-08-12: под текстом лежит КАДР 0. Раньше карточка была глухой
+    бренд-плашкой, и финал висел в пустоте. Возврат первого кадра закрывает визуальную петлю
+    «конец = начало»: в ленте ролик уходит на повтор без визуального шва, а первый кадр —
+    единственный, который зритель уже точно видел, поэтому узнаётся мгновенно.
+    Читаемость текста держит затемняющий скрим поверх кадра, а не заливка."""
     if not text.strip() or start >= total - 0.5:
         return [], []
     dur = total - start
@@ -363,14 +382,27 @@ def _payoff_clip(text: str, start: float, total: float):
     # ВАЖНО: текст оборачивается во внутренний блок. `.potext` — flex-контейнер, и без обёртки
     # каждый <span> акцента становится отдельным flex-элементом в строке — текст не переносится
     # и уезжает за края кадра (поймано на тестовом рендере 2026-08-12).
-    clips = [f'<div id="pocard" class="clip pocard" data-start="{start:.3f}" '
-             f'data-duration="{dur:.3f}" data-track-index="9"></div>',
-             f'<div id="potext" class="clip potext" data-start="{start:.3f}" '
-             f'data-duration="{dur:.3f}" data-track-index="10">'
-             f'<div class="poinner" style="font-size:{fs}px">{_accent_html(text.strip())}</div></div>']
-    tweens = [f'tl.from("#pocard",{{opacity:0,duration:0.22,ease:"power2.out"}},{start:.3f});',
-              f'tl.from("#potext",{{opacity:0,y:40,scale:0.94,duration:0.3,ease:"back.out(1.5)"}},'
-              f'{start + 0.08:.3f});']
+    clips = [
+        f'<img id="poframe" class="clip poframe" src="assets/frame0.png" '
+        f'data-start="{start:.3f}" data-duration="{dur:.3f}" data-track-index="9"/>',
+        f'<div id="pocard" class="clip pocard" data-start="{start:.3f}" '
+        f'data-duration="{dur:.3f}" data-track-index="10"></div>',
+        f'<div id="potext" class="clip potext" data-start="{start:.3f}" '
+        f'data-duration="{dur:.3f}" data-track-index="11">'
+        f'<div class="poinner" style="font-size:{fs}px">{_accent_html(text.strip())}</div></div>']
+    # `tl.from` оставляет элемент видимым в DOM до инициализации твина: при перемотке
+    # полноэкранная карточка накрывала кадры ДО своего окна (линтер:
+    # gsap_fullscreen_overlay_starts_visible). Поэтому явный `tl.set` в нуле таймлайна,
+    # а вход — через `tl.to`.
+    tweens = [
+        f'tl.set("#poframe",{{opacity:0}},0); tl.set("#pocard",{{opacity:0}},0); '
+        f'tl.set("#potext",{{opacity:0}},0);',
+        # медленный отъезд: кадр «выдыхает», а не замирает картинкой под текстом
+        f'tl.fromTo("#poframe",{{scale:1.12}},{{scale:1.02,duration:{dur:.3f},ease:"none"}},{start:.3f});',
+        f'tl.to("#poframe",{{opacity:1,duration:0.2,ease:"power2.out"}},{start:.3f});',
+        f'tl.to("#pocard",{{opacity:1,duration:0.24,ease:"power2.out"}},{start:.3f});',
+        f'tl.fromTo("#potext",{{opacity:0,y:40,scale:0.94}},{{opacity:1,y:0,scale:1,'
+        f'duration:0.3,ease:"back.out(1.5)"}},{start + 0.08:.3f});']
     return clips, tweens
 
 
@@ -386,6 +418,7 @@ _CSS = f"""
 html,body{{width:1080px;height:1920px;overflow:hidden;background:#000}}
 body{{font-family:Montserrat,Inter,"Helvetica Neue",Arial,sans-serif;
 -webkit-font-smoothing:antialiased}}
+.fwrap{{position:absolute;inset:0;overflow:hidden}}
 .frame{{position:absolute;inset:0;width:1080px;height:1920px;object-fit:cover}}
 .grain{{position:absolute;inset:0;mix-blend-mode:overlay;opacity:.10;
 background-image:url("{_GRAIN_SVG}");background-size:260px 260px}}
@@ -471,13 +504,18 @@ text-shadow:0 3px 14px rgba(0,0,0,.85)}}
 font-size:30px;font-weight:600;letter-spacing:.4px;padding:9px 20px;border-radius:8px;
 border-left:6px solid var(--green)}}
 
-/* payoff-карточка */
+/* payoff-карточка: кадр 0 + затемнение, поверх — вывод (петля «конец = начало») */
+.poframe{{position:absolute;inset:0;width:1080px;height:1920px;object-fit:cover}}
+/* затемнение подобрано так, чтобы кадр читался как кадр, а не как фон под текстом:
+   узнаваемость первого кадра — половина смысла петли. Читаемость держит тень текста. */
 .pocard{{position:absolute;inset:0;
-background:linear-gradient(165deg,{NAVY} 0%,#1B3E59 58%,#132C40 100%)}}
+background:linear-gradient(165deg,rgba(20,44,66,.58) 0%,rgba(12,30,46,.70) 52%,
+rgba(8,20,32,.80) 100%)}}
 .potext{{position:absolute;left:80px;right:80px;top:{SAFE_TOP}px;bottom:{SAFE_BOTTOM - 40}px;
 display:flex;align-items:center;justify-content:center}}
 .poinner{{width:100%;text-align:center;color:#fff;font-weight:900;line-height:1.12;
-letter-spacing:-1.5px;overflow-wrap:break-word}}
+letter-spacing:-1.5px;overflow-wrap:break-word;
+text-shadow:0 6px 32px rgba(0,0,0,.92),0 2px 8px rgba(0,0,0,.95),0 0 3px rgba(0,0,0,.9)}}
 .potext .hl{{color:#8BD98F}}
 """
 
@@ -493,7 +531,7 @@ def _build_html(frame_spans, motions, beat_words, fallback_captions, beat_starts
     texture = [f'<div id="vig" class="clip vig" data-start="0.000" data-duration="{total:.3f}" '
                f'data-track-index="2"></div>',
                f'<div id="grain" class="clip grain" data-start="0.000" data-duration="{total:.3f}" '
-               f'data-track-index="11"></div>']
+               f'data-track-index="12"></div>']
     clips = fc + texture[:1] + oc + cc + hc + pc + texture[1:]
     tweens = ft + ot + ct + ht + pt
     html = f"""<!doctype html>
@@ -519,41 +557,89 @@ window.__timelines["main"]=tl;
 # --- звук -----------------------------------------------------------------------
 # Карта SFX → файл бандла. Уровни — из research/62 §1, приглушены на 3-4дБ под спокойный
 # тон канала (там ориентир на «энергичный» монтаж, у нас wellness).
-SFX_MAP = {
-    "pop":   ("pop.mp3", -19.0),
-    "cut":   ("whoosh-short.mp3", -21.0),
-    "turn":  ("impact-bass-1.mp3", -16.0),
-    "stamp": ("impact-bass-2.mp3", -16.0),
-    "payoff": ("chime.mp3", -19.0),
-    "riser": ("riser.mp3", -22.0),
+SFX_PROFILES: dict[str, dict] = {
+    # Профиль решает ДВА вопроса: на какие события вообще ставить звук и насколько тихо.
+    # Первая версия ставила whoosh на каждую склейку и pop на каждый оверлей — 18 событий на
+    # 27 секунд. Для спокойного wellness-канала это оказалось слишком часто (владелец,
+    # 2026-08-12), поэтому плотность стала настройкой, а не константой.
+    #
+    # Ключи событий: frame_cut · turn · payoff · overlay:<kind>. Значение — (файл, дБ).
+    # Отсутствие ключа = на это событие звука нет.
+    "none": {},
+
+    # Только два смысловых удара за ролик: слом и вывод.
+    "minimal": {
+        "turn":   ("impact-bass-1.mp3", -22.0),
+        "payoff": ("chime.mp3", -22.0),
+    },
+
+    # Тихие тики на графику, склейки молчат. Звук как фактура, а не как акцент.
+    "soft": {
+        "overlay:*":     ("click-soft.mp3", -26.0),
+        "overlay:stamp": ("impact-bass-2.mp3", -22.0),
+        "payoff":        ("chime.mp3", -23.0),
+    },
+
+    # Звучат только оверлеи с цифрами — звук становится сигналом «здесь данные».
+    "data": {
+        "overlay:stat":   ("ping.mp3", -23.0),
+        "overlay:bar":    ("ping.mp3", -24.0),
+        "overlay:versus": ("ping.mp3", -24.0),
+        "overlay:stamp":  ("impact-bass-2.mp3", -21.0),
+        "turn":           ("impact-bass-1.mp3", -21.0),
+        "payoff":         ("chime.mp3", -22.0),
+    },
+
+    # Первая версия, оставлена для сравнения.
+    "dense": {
+        "frame_cut":     ("whoosh-short.mp3", -21.0),
+        "overlay:*":     ("pop.mp3", -19.0),
+        "overlay:stamp": ("impact-bass-2.mp3", -16.0),
+        "turn":          ("impact-bass-1.mp3", -16.0),
+        "payoff":        ("chime.mp3", -19.0),
+    },
 }
+DEFAULT_SFX_PROFILE = "data"
 
 
-def _stage_sfx(work_dir: Path, names: set[str]) -> dict[str, Path]:
+def _sfx_plan(profile: str, events: list[tuple[float, str]]) -> list[tuple[float, str, float]]:
+    """Семантические события → конкретные (время, файл, громкость) по выбранному профилю.
+    `overlay:*` — фолбэк для видов графики, у которых нет отдельной записи."""
+    table = SFX_PROFILES.get(profile, SFX_PROFILES[DEFAULT_SFX_PROFILE])
+    out = []
+    for t, ev in events:
+        hit = table.get(ev)
+        if hit is None and ev.startswith("overlay:"):
+            hit = table.get("overlay:*")
+        if hit:
+            out.append((t, hit[0], hit[1]))
+    return out
+
+
+def _stage_sfx(work_dir: Path, filenames: set[str]) -> dict[str, Path]:
     """Копирует нужные SFX из бандла скилла в папку прогона. Если бандла нет — возвращает
     то, что удалось найти; сборка просто соберётся без этих акцентов."""
     out: dict[str, Path] = {}
     dest = work_dir / "sfx"
     dest.mkdir(parents=True, exist_ok=True)
-    for key in names:
-        fname, _ = SFX_MAP[key]
+    for fname in filenames:
         src = SFX_SRC / fname
         if src.exists():
             dst = dest / fname
             if not dst.exists():
                 shutil.copy2(src, dst)
-            out[key] = dst
+            out[fname] = dst
     return out
 
 
 def _mix_audio(video_mp4: Path, voice_wav: Path, out_mp4: Path, total: float,
-               sfx_events: list[tuple[float, str]], bgm_wav: Path | None,
+               sfx_plan: list[tuple[float, str, float]], bgm_wav: Path | None,
                work_dir: Path, duck_from: float | None) -> None:
     """Микс: голос (доминанта) + BGM с ducking'ом + SFX по меткам времени.
     `duck_from` — момент «music stop» перед payoff: музыка уходит в ноль, чтобы вывод
     прозвучал в тишине (research/62 §5), и возвращается на финальной карточке."""
-    files = _stage_sfx(work_dir, {k for _, k in sfx_events})
-    events = [(t, k) for t, k in sfx_events if k in files]
+    files = _stage_sfx(work_dir, {f for _, f, _ in sfx_plan})
+    events = [(t, f, g) for t, f, g in sfx_plan if f in files]
 
     # inputs: 0=video, 1=voice, [2=bgm], далее по одному входу на каждый SFX
     inputs = ["-i", str(video_mp4), "-i", str(voice_wav)]
@@ -589,9 +675,8 @@ def _mix_audio(video_mp4: Path, voice_wav: Path, out_mp4: Path, total: float,
         mix_labels.append("[bgd]")
         idx += 1
 
-    for n, (t, key) in enumerate(events):
-        _, gain = SFX_MAP[key]
-        inputs += ["-i", str(files[key])]
+    for n, (t, fname, gain) in enumerate(events):
+        inputs += ["-i", str(files[fname])]
         delay_ms = int(max(t, 0.0) * 1000)
         parts.append(f"[{idx}:a]volume={gain}dB,aresample=48000,"
                      f"adelay={delay_ms}|{delay_ms},atrim=0:{total:.3f}[s{n}]")
@@ -621,7 +706,8 @@ def _mix_audio(video_mp4: Path, voice_wav: Path, out_mp4: Path, total: float,
 def build_and_render(frames: list[Path], frame_spans, motions, beat_words, fallback_captions,
                      beat_durs, overlays, emphases, voice_wav: Path, out_mp4: Path,
                      work_dir: Path, headline: str = "", payoff_text: str = "",
-                     turn_beat_idx: int | None = None, bgm_wav: Path | None = None) -> Path:
+                     turn_beat_idx: int | None = None, bgm_wav: Path | None = None,
+                     sfx_profile: str = DEFAULT_SFX_PROFILE) -> Path:
     """Собирает HTML, рендерит через hyperframes и микширует звук.
 
     frame_spans — [(beat_from, beat_to), ...] по одному на кадр; длина == len(frames).
@@ -668,18 +754,41 @@ def build_and_render(frames: list[Path], frame_spans, motions, beat_words, fallb
     subprocess.run(["npx", "--yes", "hyperframes", "render", "-o", "video.mp4"],
                    cwd=str(work_dir), check=True, env=_node22_env())
 
-    # --- звуковые метки ---
-    sfx: list[tuple[float, str]] = []
-    for i, (b_from, _) in enumerate(frame_spans):
-        if i:                                          # склейка кадров
-            sfx.append((max(beat_starts[b_from] - 0.06, 0.0), "cut"))
-    sfx += [(t, k) for t, k in ov_sfx]                 # появление графики
-    if turn_beat_idx is not None and 0 <= turn_beat_idx < len(beat_starts):
-        sfx.append((beat_starts[turn_beat_idx] - 0.05, "turn"))
-    if payoff_start > 1.0:
-        sfx.append((payoff_start, "payoff"))
-    sfx = [(round(max(t, 0.0), 3), k) for t, k in sfx]
+    # --- звуковые события (семантические; в файлы их превращает профиль) ---
+    events = sfx_events(frame_spans, beat_starts, ov_sfx, turn_beat_idx, payoff_start)
+    (work_dir / "sfx_events.json").write_text(
+        json.dumps({"total": total, "payoff_start": payoff_start, "events": events},
+                   ensure_ascii=False, indent=2), encoding="utf-8")
 
-    _mix_audio(work_dir / "video.mp4", voice_wav, Path(out_mp4), total, sfx,
-               bgm_wav, work_dir, duck_from=(payoff_start - 0.5) if payoff_start > 1.0 else None)
+    mix(work_dir / "video.mp4", voice_wav, Path(out_mp4), total, events, bgm_wav, work_dir,
+        payoff_start, profile=sfx_profile)
+    return Path(out_mp4)
+
+
+def sfx_events(frame_spans, beat_starts, ov_sfx, turn_beat_idx, payoff_start
+               ) -> list[tuple[float, str]]:
+    """Семантические звуковые события ролика — БЕЗ привязки к конкретным файлам.
+    Разделение нужно, чтобы одну и ту же сборку можно было переозвучить другим профилем,
+    не перерисовывая видео (`mix` на готовом `hf/video.mp4`)."""
+    ev: list[tuple[float, str]] = []
+    for i, (b_from, _) in enumerate(frame_spans):
+        if i:
+            ev.append((max(beat_starts[b_from] - 0.06, 0.0), "frame_cut"))
+    ev += [(t, k) for t, k in ov_sfx]
+    if turn_beat_idx is not None and 0 <= turn_beat_idx < len(beat_starts):
+        ev.append((beat_starts[turn_beat_idx] - 0.05, "turn"))
+    if payoff_start > 1.0:
+        ev.append((payoff_start, "payoff"))
+    return [(round(max(t, 0.0), 3), k) for t, k in ev]
+
+
+def mix(video_mp4: Path, voice_wav: Path, out_mp4: Path, total: float,
+        events: list[tuple[float, str]], bgm_wav: Path | None, work_dir: Path,
+        payoff_start: float, profile: str = DEFAULT_SFX_PROFILE) -> Path:
+    """Собирает звук поверх УЖЕ отрендеренного видео. Отдельная функция, чтобы менять
+    звуковой профиль стоило секунды, а не полного повторного рендера."""
+    plan = _sfx_plan(profile, events)
+    # «Music stop» перед выводом имеет смысл только когда музыка вообще есть.
+    duck = (payoff_start - 0.5) if (bgm_wav and payoff_start > 1.0) else None
+    _mix_audio(video_mp4, voice_wav, Path(out_mp4), total, plan, bgm_wav, work_dir, duck)
     return Path(out_mp4)

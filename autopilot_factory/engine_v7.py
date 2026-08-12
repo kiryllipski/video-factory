@@ -531,7 +531,7 @@ def produce(channel: str, topic: str, fmt: str = "", slug: str = "", go: bool = 
     return run_dir
 
 
-def rebuild(run_dir: Path, channel: str) -> Path:
+def rebuild(run_dir: Path, channel: str, sfx_profile: str = A.DEFAULT_SFX_PROFILE) -> Path:
     """Пересобирает ролик из уже сохранённых артефактов прогона (script/frame_plan/frames/audio),
     без единого обращения к API. Нужно, когда меняется только сборка — правка CSS, тайминга,
     звука. Раньше такой правки не существовало как операции: любое изменение рендера означало
@@ -549,9 +549,86 @@ def rebuild(run_dir: Path, channel: str) -> Path:
         [b.on_screen_text for b in sc.beats], durs, sc.overlays,
         [b.emphasis for b in sc.beats], voice_wav, out_mp4, run_dir / "hf",
         headline=sc.poster_text, payoff_text=sc.payoff_card,
-        turn_beat_idx=sc.turn_beat_idx, bgm_wav=_channel_bgm(channel))
+        turn_beat_idx=sc.turn_beat_idx, bgm_wav=_channel_bgm(channel),
+        sfx_profile=sfx_profile)
     print(f"[rebuilt] {out_mp4}")
     return out_mp4
+
+
+def _label_png(dest: Path, text: str) -> Path:
+    """Плашка-подпись для сравнительной катушки. Нужна только для внутреннего просмотра —
+    в продакшен-ролик не попадает."""
+    from PIL import Image, ImageDraw, ImageFont
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 40)
+    except OSError:
+        font = ImageFont.load_default()
+    pad = 22
+    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    box = probe.textbbox((0, 0), text, font=font)
+    w, h = box[2] - box[0] + pad * 2, box[3] - box[1] + pad * 2
+    img = Image.new("RGBA", (w, h), (8, 12, 20, 205))
+    ImageDraw.Draw(img).text((pad - box[0], pad - box[1]), text,
+                             font=font, fill=(255, 255, 255, 255))
+    img.save(dest)
+    return dest
+
+
+def remix(run_dir: Path, channel: str, profiles: list[str]) -> list[Path]:
+    """Переозвучивает готовый ролик каждым из профилей и склеивает сравнительную «катушку»
+    с подписью профиля в кадре. Видео не перерисовывается — берётся `hf/video.mp4`, меняется
+    только звук, поэтому вариант стоит секунды и ноль обращений к API.
+
+    Заведено по замечанию владельца 2026-08-12: плотность и характер SFX нельзя угадать
+    из ресёрча, её надо выбрать ушами на реальном ролике."""
+    hf = run_dir / "hf"
+    events_path = hf / "sfx_events.json"
+    if not events_path.exists():
+        raise SystemExit(f"[remix] нет {events_path} — пересобери прогон (--rebuild)")
+    meta = json.loads(events_path.read_text(encoding="utf-8"))
+    events = [(float(t), k) for t, k in meta["events"]]
+    voice = run_dir / "audio" / "voice.wav"
+    bgm = _channel_bgm(channel)
+    out_dir = run_dir / "sfx_variants"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    made: list[Path] = []
+    for prof in profiles:
+        dst = out_dir / f"{prof}.mp4"
+        A.mix(hf / "video.mp4", voice, dst, meta["total"], events, bgm, hf,
+              meta["payoff_start"], profile=prof)
+        n = len(A._sfx_plan(prof, events))
+        print(f"[remix] {prof:9s} · {n:>2} звуковых событий → {dst.name}")
+        made.append(dst)
+
+    # сравнительная катушка: те же кадры, разный звук, подпись профиля в кадре
+    reel = out_dir / "porownanie.mp4"
+    labeled = []
+    for prof, src in zip(profiles, made):
+        lab = out_dir / f"_lab_{prof}.mp4"
+        n = len(A._sfx_plan(prof, events))
+        badge = _label_png(out_dir / f"_badge_{prof}.png",
+                           f"{prof.upper()}  ·  {n} zvukov")
+        # Подпись накладывается картинкой, а не фильтром drawtext: в локальной сборке ffmpeg
+        # 8.1.1 фильтра drawtext нет вовсе (собран без libfreetype) — проверено 2026-08-12.
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(src), "-i", str(badge),
+             "-filter_complex", "[0:v][1:v]overlay=x=(W-w)/2:y=96[v]",
+             "-map", "[v]", "-map", "0:a",
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+             "-c:a", "aac", "-b:a", "192k", str(lab)],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        labeled.append(lab)
+        badge.unlink(missing_ok=True)
+    lst = out_dir / "concat.txt"
+    lst.write_text("".join(f"file '{p.name}'\n" for p in labeled), encoding="utf-8")
+    subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(lst),
+                    "-c", "copy", str(reel)], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for p in labeled:
+        p.unlink(missing_ok=True)
+    print(f"[remix] катушка сравнения → {reel}")
+    return made + [reel]
 
 
 def main():
@@ -563,9 +640,16 @@ def main():
     p.add_argument("--go", action="store_true", help="запустить генерацию кадров/озвучки/сборку")
     p.add_argument("--rebuild", default="", metavar="RUN_DIR",
                    help="пересобрать ролик из артефактов прогона, без вызовов API")
+    p.add_argument("--sfx", default=A.DEFAULT_SFX_PROFILE,
+                   choices=list(A.SFX_PROFILES), help="звуковой профиль сборки")
+    p.add_argument("--remix", default="", metavar="RUN_DIR",
+                   help="переозвучить готовый ролик всеми профилями + катушка сравнения")
     a = p.parse_args()
+    if a.remix:
+        remix(Path(a.remix), a.channel, list(A.SFX_PROFILES))
+        return
     if a.rebuild:
-        rebuild(Path(a.rebuild), a.channel)
+        rebuild(Path(a.rebuild), a.channel, sfx_profile=a.sfx)
         return
     produce(a.channel, a.topic, a.format, a.slug, go=a.go)
 

@@ -186,9 +186,15 @@ python3 learning_loop.py table    --channel vitallogic_bad_pl   # join рыча�
 
 ```bash
 cd autopilot_factory
-python3 engine_v7.py --topic "<тема>" [--format tier_list] [--slug s] [--go]
-python3 engine_v7.py --rebuild runs/<ch>/<run>     # пересобрать из артефактов, БЕЗ вызовов API
+python3 engine_v7.py --topic "<тема>" [--format tier_list] [--slug s] [--sfx data] [--go]
+python3 engine_v7.py --rebuild runs/<ch>/<run> [--sfx soft]  # пересобрать, БЕЗ вызовов API
+python3 engine_v7.py --remix   runs/<ch>/<run>               # все звуковые профили + катушка сравнения
 ```
+
+**Звук — профиль, а не константа** (владелец 2026-08-12: «слишком часто»). `SFX_PROFILES` в
+`assembly_v7.py`: `none` · `minimal` (2 события) · `soft` · `data` (дефолт) · `dense` (первая
+версия, 14 событий). `--remix` переозвучивает ГОТОВОЕ видео всеми профилями за секунды —
+видео не перерисовывается, поэтому подбирать звук ушами дёшево.
 
 **Три вещи, которые в v7 надо понимать, иначе сломаешь замысел:**
 1. **Формат — поле контракта.** 11 форматов (`schemas_v7.FORMAT_BRIEFS`), ротация обязательна
