@@ -233,9 +233,19 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats):
     конца ролика, если бит последний) — чтобы успел прочитаться, но не залёживался."""
     clips, tweens, sfx_marks = [], [], []
     ordered = sorted(overlays, key=lambda o: o.beat_idx)
-    # Следующая по времени графика задаёт потолок для предыдущей: без этого оверлеи с соседних
-    # битов накладываются друг на друга (на тестовом рендере 2026-08-12 штамп лёг поверх
-    # versus-таблицы). Одновременно на экране — не более одного оверлея.
+    # Окно графики привязано к СВОЕМУ биту плюс короткий хвост.
+    #
+    # До 2026-08-12 правило было «живи до конца СЛЕДУЮЩЕГО бита, но уступи следующему
+    # оверлею за 0.08с» — и ошибалось в обе стороны сразу (владелец: «элементы пропадают
+    # не тогда, когда нужно»):
+    #   · графика плотная → оверлей гас РАНЬШЕ конца своей же фразы (9 случаев из 21
+    #     по трём роликам), причём 0.2с фейда съедали ещё и остаток;
+    #   · графика редкая → оверлей висел на чужих битах (versus жил 5.9с при своём бите 3.2с).
+    # Плюс пол `max(..., 0.9)` мог перебить ограничение и вернуть наложение.
+    TAIL = 0.35          # столько графика висит после конца своей фразы
+    MIN_DUR = 0.7        # ниже этого элемент не успевает прочитаться
+    GAP = 0.05           # зазор до следующего оверлея (1.5 кадра — глазом не видно)
+
     next_start = {}
     for i, o in enumerate(ordered[:-1]):
         nb = max(0, min(int(ordered[i + 1].beat_idx), n_beats - 1))
@@ -244,12 +254,15 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats):
     for k, ov in enumerate(ordered):
         bi = max(0, min(int(ov.beat_idx), n_beats - 1))
         start = beat_starts[bi]
-        nb = min(bi + 1, n_beats - 1)
-        end = beat_starts[nb] + beat_durs[nb]
+        end = beat_starts[bi] + beat_durs[bi] + TAIL      # свой бит + хвост
         limit = next_start.get(id(ov))
-        if limit is not None:
-            end = min(end, limit - 0.08)
-        dur = max(end - start, 0.9)
+        capped = False
+        if limit is not None and limit - GAP < end:
+            # уступаем следующему оверлею, но не раньше минимума — иначе элемент мигает
+            end = max(limit - GAP, start + MIN_DUR)
+            capped = True
+        end = min(end, sum(beat_durs))                    # не выезжаем за конец ролика
+        dur = max(end - start, MIN_DUR)
         oid = f"ov{k}"
         kind = ov.kind
         body = ""
@@ -306,7 +319,8 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats):
             txt = (ov.value or ov.label).strip()
             sfs = 112 if len(txt) <= 5 else (88 if len(txt) <= 9 else 68)
             body = f'<div class="stamptext" style="font-size:{sfs}px">{escape(txt)}</div>'
-            tweens.append(f'tl.fromTo("#{oid}",{{scale:2.1,opacity:0,rotation:-14}},'
+            tweens.append(f'tl.set("#{oid}",{{opacity:0}},0);'
+                          f'tl.fromTo("#{oid}",{{scale:2.1,opacity:0,rotation:-14}},'
                           f'{{scale:1,opacity:1,rotation:-9,duration:0.26,ease:"power4.out"}},'
                           f'{start + 0.06:.3f});')
         elif kind == "source":
@@ -326,19 +340,30 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats):
 
         clips.append(f'<div id="{oid}" class="clip ov ov-{kind}" data-start="{start:.3f}" '
                      f'data-duration="{dur:.3f}" data-track-index="{5 + (k % 2)}">{body}</div>')
+        # Каждый оверлей начинает таймлайн погашенным и входит через `fromTo`, а не `from`.
+        # `from` оставляет элемент видимым в DOM до инициализации твина: при перемотке
+        # (а hyperframes рендерит именно перемоткой) элемент мог мелькнуть до своего окна.
+        tweens.append(f'tl.set("#{oid}",{{opacity:0}},0);')
         if kind == "stamp":
             pass                                   # у штампа свой вход (slam), задан выше
         elif kind == "source":
-            tweens.append(f'tl.from("#{oid}",{{opacity:0,duration:0.2,ease:"power1.out"}},'
-                          f'{start + 0.05:.3f});')
+            tweens.append(f'tl.fromTo("#{oid}",{{opacity:0}},{{opacity:1,duration:0.2,'
+                          f'ease:"power1.out"}},{start + 0.05:.3f});')
         else:
-            tweens.append(f'tl.from("#{oid}",{{opacity:0,y:34,scale:0.94,duration:0.24,'
+            tweens.append(f'tl.fromTo("#{oid}",{{opacity:0,y:34,scale:0.94}},'
+                          f'{{opacity:1,y:0,scale:1,duration:0.24,'
                           f'ease:"back.out(1.4)"}},{start + 0.05:.3f});')
         # После фейда — явный `tl.set`: перемотка может встать ПОСЛЕ окна твина, и без
         # жёсткого гашения элемент остаётся видимым (линтер: gsap_exit_missing_hard_kill).
-        tweens.append(f'tl.to("#{oid}",{{opacity:0,duration:0.2,ease:"power1.in"}},'
-                      f'{start + dur - 0.2:.3f});'
-                      f'tl.set("#{oid}",{{opacity:0}},{start + dur:.3f});')
+        # Длина гашения зависит от того, свободен ли хвост.
+        # Если окно поджато следующим оверлеем (`capped`), фраза договаривается ровно в
+        # момент смены — долгий фейд тогда съедает конец собственной реплики и читается как
+        # «элемент пропал раньше времени». В этом случае гасим быстро; когда хвост свободен —
+        # гасим мягко, уже после того, как фраза закончилась.
+        fade = 0.10 if capped else min(0.22, max(dur * 0.15, 0.10))
+        tweens.append(f'tl.to("#{oid}",{{opacity:0,duration:{fade:.3f},ease:"power1.in"}},'
+                      f'{start + dur - fade:.3f});'
+                      f'tl.set("#{oid}",{{opacity:0}},{start + dur + 0.02:.3f});')
         if kind != "source":                       # атрибуция появляется беззвучно
             sfx_marks.append((start + 0.05, f"overlay:{kind}"))
     return clips, tweens, sfx_marks
@@ -565,38 +590,50 @@ SFX_PROFILES: dict[str, dict] = {
     # «звуков вообще не было». Теперь каждый сэмпл сначала измеряется, а потом
     # приводится к целевому пику — цифра в таблице означает одно и то же для всех файлов.
     #
-    # Ориентир: голос нормализован к −14 LUFS и пикует около −3 dBFS.
-    #   −26 — на грани слышимости, фактура
-    #   −20 — заметный, но не мешает речи
-    #   −14 — акцент, который слышно как акцент
+    # Ориентир (откалиброван на слух 2026-08-12 по колокольчику payoff — единственному
+    # звуку, который владелец слышал отчётливо; он был на −17, но звучал в обрыве музыки,
+    # где ему ничто не мешает. Всё, что конкурирует с речью и музыкой, должно быть громче):
+    #   −19 — фактура, слышно, но не отвлекает
+    #   −15 — заметный акцент под речью
+    #   −11 — удар, который слышно как удар
     "none": {},
 
     "minimal": {
-        "turn":   ("impact-bass-1.mp3", -15.0),
-        "payoff": ("chime.mp3", -17.0),
+        "turn":   ("impact-bass-1.mp3", -11.0),
+        "payoff": ("chime.mp3", -10.0),
     },
 
     "soft": {
-        "overlay:*":     ("click-soft.mp3", -25.0),
-        "overlay:stamp": ("impact-bass-2.mp3", -18.0),
-        "payoff":        ("chime.mp3", -19.0),
+        "overlay:*":     ("click-soft.mp3", -16.0),
+        "overlay:stamp": ("impact-bass-2.mp3", -14.0),
+        "turn":          ("impact-bass-1.mp3", -14.0),
+        "payoff":        ("chime.mp3", -12.0),
     },
 
     "data": {
-        "overlay:stat":   ("ping.mp3", -20.0),
-        "overlay:bar":    ("ping.mp3", -22.0),
-        "overlay:versus": ("ping.mp3", -22.0),
-        "overlay:stamp":  ("impact-bass-2.mp3", -16.0),
-        "turn":           ("impact-bass-1.mp3", -15.0),
-        "payoff":         ("chime.mp3", -17.0),
+        # У профиля ОБЯЗАН быть фолбэк `overlay:*`, иначе часть графики появляется молча.
+        # Так и было до 2026-08-12: в ролике про железо звучали 4 события из 15 — три
+        # callout и два list не имели звука вовсе, и это владелец услышал как «звуков нет».
+        #
+        # Уровни выровнены между собой: тихие сэмплы (ping, chime) звучат короче и мягче
+        # ударов, поэтому при равной цифре в dBFS слышны заметно слабее. Замер 2026-08-12
+        # показал, что ping на −15 и chime на −14 тонули в речи, пока удары на −11/−12
+        # читались отчётливо, — подтянуты к тому же уровню.
+        "overlay:*":      ("click-soft.mp3", -14.0),
+        "overlay:stat":   ("ping.mp3", -10.0),
+        "overlay:bar":    ("ping.mp3", -11.0),
+        "overlay:versus": ("ping.mp3", -11.0),
+        "overlay:stamp":  ("impact-bass-2.mp3", -12.0),
+        "turn":           ("impact-bass-1.mp3", -11.0),
+        "payoff":         ("chime.mp3", -10.0),
     },
 
     "dense": {
-        "frame_cut":     ("whoosh-short.mp3", -22.0),
-        "overlay:*":     ("pop.mp3", -20.0),
-        "overlay:stamp": ("impact-bass-2.mp3", -15.0),
-        "turn":          ("impact-bass-1.mp3", -13.0),
-        "payoff":        ("chime.mp3", -16.0),
+        "frame_cut":     ("whoosh-short.mp3", -18.0),
+        "overlay:*":     ("pop.mp3", -15.0),
+        "overlay:stamp": ("impact-bass-2.mp3", -11.0),
+        "turn":          ("impact-bass-1.mp3", -9.0),
+        "payoff":        ("chime.mp3", -13.0),
     },
 }
 DEFAULT_SFX_PROFILE = "data"
@@ -671,11 +708,14 @@ def _mix_audio(video_mp4: Path, voice_wav: Path, out_mp4: Path, total: float,
 
     has_bgm = bool(bgm_wav and Path(bgm_wav).exists())
 
-    # Голос — доминанта: лёгкая компрессия, чтобы тихие слоги не тонули под музыкой,
-    # затем нормализация к −14 LUFS (таргет мобильного прослушивания, research/62 §3).
+    # Голос — доминанта, но нормализуем его НИЖЕ финальной цели, чтобы в миксе остался
+    # запас под SFX. До 2026-08-12 голос шёл сразу на −14 LUFS / −1.5 dBTP, впритык к
+    # потолку лимитера: любой звук, попавший на громкую фразу, лимитер съедал целиком.
+    # Снаружи это выглядело как «часть звуков не слышно» — тихие места звучали, громкие нет.
+    # Финальную громкость набирает уже вся сумма (см. конец функции).
     # asplit нужен потому, что голос используется дважды: в миксе и как сайдчейн для ducking'а.
     voice_chain = ("[1:a]acompressor=threshold=-18dB:ratio=3:attack=8:release=140,"
-                   "loudnorm=I=-14:TP=-1.5:LRA=11")
+                   "loudnorm=I=-17:TP=-4:LRA=11")
     parts.append(voice_chain + ("[vsplit]" if has_bgm else "[voc]"))
     if has_bgm:
         parts.append("[vsplit]asplit=2[voc][vocsc]")
@@ -710,16 +750,50 @@ def _mix_audio(video_mp4: Path, voice_wav: Path, out_mp4: Path, total: float,
         idx += 1
 
     parts.append(f"{''.join(mix_labels)}amix=inputs={len(mix_labels)}:duration=first:"
-                 f"normalize=0,alimiter=limit=0.89:level=0[aout]")   # ≈ −1 dBFS: таргет True Peak платформ.
-                 # level=0 обязателен: по умолчанию alimiter САМ подтягивает сигнал
-                 # к потолку, и понижение limit делало микс громче, а не тише
-                 # плюс запас на овершут AAC (замер 2026-08-12 показывал пик ровно 0.0 dB)
+                 f"normalize=0[aout]")
     fc = ";".join(parts)
-    cmd = ["ffmpeg", "-y"] + inputs + [
-        "-filter_complex", fc, "-map", "0:v", "-map", "[aout]",
-        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
-        "-map_metadata", "-1", "-fflags", "+bitexact", "-flags:a", "+bitexact",
-        str(out_mp4)]
+
+    # --- проход 1: сводим звук как есть, БЕЗ нормализации ---------------------------
+    # Однопроходный `loudnorm` ведёт усиление динамически и по-разному в разных вариантах
+    # микса: в замерах 2026-08-12 он локально ГАСИЛ отдельные SFX, из-за чего казалось,
+    # что часть звуков не попала в сборку (на деле слой SFX был полным). Двухпроходная
+    # схема — измерили сумму, применили ПОСТОЯННЫЙ gain — и от этого артефакта избавляет,
+    # и делает громкость воспроизводимой от прогона к прогону.
+    raw = Path(work_dir) / "mix_raw.wav"
+    p1 = subprocess.run(["ffmpeg", "-y"] + inputs + [
+        "-filter_complex", fc, "-map", "[aout]", "-c:a", "pcm_s16le", str(raw)],
+        capture_output=True, text=True)
+    if p1.returncode != 0:
+        print(f"[WARN] микс со звуковым дизайном не собрался, фолбэк на голос.\n"
+              f"{p1.stderr.strip()[-700:]}")
+        subprocess.run(["ffmpeg", "-y", "-i", str(video_mp4), "-i", str(voice_wav),
+                        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
+                        "-map_metadata", "-1", "-fflags", "+bitexact", "-flags:a", "+bitexact",
+                        str(out_mp4)], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
+
+    # --- проход 2: измеряем сумму и добираем громкость постоянным усилением ----------
+    meas = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(raw),
+                           "-af", "ebur128", "-f", "null", "-"], capture_output=True, text=True)
+    lufs = None
+    for line in meas.stderr.splitlines():
+        t = line.strip()
+        if t.startswith("I:") and "LUFS" in t:
+            try:
+                lufs = float(t.split()[1])
+            except (IndexError, ValueError):
+                pass
+    gain_db = 0.0 if lufs is None else max(min(-14.0 - lufs, 12.0), -12.0)
+    cmd = ["ffmpeg", "-y", "-i", str(video_mp4), "-i", str(raw),
+           # level=0 обязателен: по умолчанию alimiter САМ подтягивает сигнал к потолку,
+           # и понижение limit делало микс громче, а не тише. 0.89 ≈ −1 dBFS — таргет
+           # True Peak платформ плюс запас на овершут AAC.
+           "-af", f"volume={gain_db:.2f}dB,alimiter=limit=0.89:level=0",
+           "-map", "0:v", "-map", "1:a",
+           "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
+           "-map_metadata", "-1", "-fflags", "+bitexact", "-flags:a", "+bitexact",
+           str(out_mp4)]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
         # звук не должен ронять прогон: падаем на простой мукс голоса
