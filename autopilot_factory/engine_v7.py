@@ -351,12 +351,21 @@ def _repair_coverage(plan: S.FramePlan, n_beats: int) -> S.FramePlan:
 
 
 # --- стадия 4: кадры ------------------------------------------------------------
+# Запрет на ЛЮБЫЕ буквы в кадре снят 2026-08-12 по замечанию владельца: модель, которой
+# запрещены «labels», рисует банку с ОБОДРАННОЙ этикеткой — в нише про составы и дозировки
+# это выглядит противоестественно, а этикетка здесь и есть предмет разговора. Теперь
+# запрещены только элементы, которые спорят с нашей собственной графикой (плашки субтитров,
+# выноски, водяные знаки) и реальные торговые марки — по юридическим причинам.
 _NEGATIVE = ("NEGATIVE: over-saturated, deep-fried colors, 3d render, plastic skin, cartoon, "
-             "mutated geometry, extra limbs, random text, watermark, logo, white border, "
+             "mutated geometry, extra limbs, watermark, channel logo, white border, "
              "photo frame, polaroid frame, paper margin, framed print, rounded photo corners, "
-             "readable text, typography, captions, subtitles, labels, diagram annotations, "
-             "infographic text, paragraphs, written words rendered in the image, text overlays — "
-             "image must bleed to all four edges of the canvas and contain NO letters or words anywhere.")
+             "subtitle bars, caption overlays, floating text callouts, diagram annotations, "
+             "infographic text, paragraphs of body copy, real-world brand names or trademarks — "
+             "image must bleed to all four edges of the canvas. "
+             "Printed packaging IS allowed and encouraged where the scene calls for it: a jar, "
+             "blister or sachet may carry its own plain printed label with short generic wording "
+             "(ingredient name, dosage, form). Keep such lettering small, crisp and incidental — "
+             "it belongs to the object, never floats over the frame as an overlay.")
 
 
 def generate_frames(plan: S.FramePlan, out_dir: Path) -> list[Path]:

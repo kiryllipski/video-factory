@@ -121,14 +121,12 @@ def _frame_clips(frame_spans, motions, beat_starts, beat_durs, total):
         )
         mo = motions[i] if i < len(motions) else "ken_burns_in"
         tweens.append(_motion_tween(f"#f{i}", mo, start, dur))
-        for b in range(b_from + 1, b_to + 1):
-            t = beat_starts[b]
-            punches.append(t)
-            tweens.append(
-                f'tl.fromTo("#fw{i}",{{scale:1}},{{scale:1.035,duration:0.16,'
-                f'ease:"power2.out"}},{t:.3f});'
-                f'tl.to("#fw{i}",{{scale:1,duration:0.5,ease:"power1.out"}},{t + 0.16:.3f});'
-            )
+        # Границы битов внутри кадра остаются точками для ЗВУКА, но визуального толчка
+        # на них больше нет. Толчок «вверх и обратно» на каждой границе читался как
+        # регулярная пульсация картинки (владелец, 2026-08-12): для появления кадра такое
+        # уместно, в середине плана — нет. Ритм в середине держат появления графики и
+        # субтитры, а сам кадр едет непрерывным Ken Burns без рывков.
+        punches.extend(beat_starts[b] for b in range(b_from + 1, b_to + 1))
     return clips, tweens, punches
 
 
@@ -558,52 +556,77 @@ window.__timelines["main"]=tl;
 # Карта SFX → файл бандла. Уровни — из research/62 §1, приглушены на 3-4дБ под спокойный
 # тон канала (там ориентир на «энергичный» монтаж, у нас wellness).
 SFX_PROFILES: dict[str, dict] = {
-    # Профиль решает ДВА вопроса: на какие события вообще ставить звук и насколько тихо.
-    # Первая версия ставила whoosh на каждую склейку и pop на каждый оверлей — 18 событий на
-    # 27 секунд. Для спокойного wellness-канала это оказалось слишком часто (владелец,
-    # 2026-08-12), поэтому плотность стала настройкой, а не константой.
+    # Профиль решает ДВА вопроса: на какие события ставить звук и насколько громко.
     #
-    # Ключи событий: frame_cut · turn · payoff · overlay:<kind>. Значение — (файл, дБ).
-    # Отсутствие ключа = на это событие звука нет.
+    # ⚠️ Значение — не «приглушить на N дБ», а **целевой пик в готовом миксе (dBFS)**.
+    # Так пришлось сделать после 2026-08-12: сэмплы бандла лежат на РАЗНЫХ уровнях
+    # (у `impact-bass-1` пик −0.4 дБ, у `ping` средний −34.7 дБ), и одинаковое
+    # приглушение давало то удар в лицо, то полную тишину. Владелец услышал второе:
+    # «звуков вообще не было». Теперь каждый сэмпл сначала измеряется, а потом
+    # приводится к целевому пику — цифра в таблице означает одно и то же для всех файлов.
+    #
+    # Ориентир: голос нормализован к −14 LUFS и пикует около −3 dBFS.
+    #   −26 — на грани слышимости, фактура
+    #   −20 — заметный, но не мешает речи
+    #   −14 — акцент, который слышно как акцент
     "none": {},
 
-    # Только два смысловых удара за ролик: слом и вывод.
     "minimal": {
-        "turn":   ("impact-bass-1.mp3", -22.0),
-        "payoff": ("chime.mp3", -22.0),
+        "turn":   ("impact-bass-1.mp3", -15.0),
+        "payoff": ("chime.mp3", -17.0),
     },
 
-    # Тихие тики на графику, склейки молчат. Звук как фактура, а не как акцент.
     "soft": {
-        "overlay:*":     ("click-soft.mp3", -26.0),
-        "overlay:stamp": ("impact-bass-2.mp3", -22.0),
-        "payoff":        ("chime.mp3", -23.0),
-    },
-
-    # Звучат только оверлеи с цифрами — звук становится сигналом «здесь данные».
-    "data": {
-        "overlay:stat":   ("ping.mp3", -23.0),
-        "overlay:bar":    ("ping.mp3", -24.0),
-        "overlay:versus": ("ping.mp3", -24.0),
-        "overlay:stamp":  ("impact-bass-2.mp3", -21.0),
-        "turn":           ("impact-bass-1.mp3", -21.0),
-        "payoff":         ("chime.mp3", -22.0),
-    },
-
-    # Первая версия, оставлена для сравнения.
-    "dense": {
-        "frame_cut":     ("whoosh-short.mp3", -21.0),
-        "overlay:*":     ("pop.mp3", -19.0),
-        "overlay:stamp": ("impact-bass-2.mp3", -16.0),
-        "turn":          ("impact-bass-1.mp3", -16.0),
+        "overlay:*":     ("click-soft.mp3", -25.0),
+        "overlay:stamp": ("impact-bass-2.mp3", -18.0),
         "payoff":        ("chime.mp3", -19.0),
+    },
+
+    "data": {
+        "overlay:stat":   ("ping.mp3", -20.0),
+        "overlay:bar":    ("ping.mp3", -22.0),
+        "overlay:versus": ("ping.mp3", -22.0),
+        "overlay:stamp":  ("impact-bass-2.mp3", -16.0),
+        "turn":           ("impact-bass-1.mp3", -15.0),
+        "payoff":         ("chime.mp3", -17.0),
+    },
+
+    "dense": {
+        "frame_cut":     ("whoosh-short.mp3", -22.0),
+        "overlay:*":     ("pop.mp3", -20.0),
+        "overlay:stamp": ("impact-bass-2.mp3", -15.0),
+        "turn":          ("impact-bass-1.mp3", -13.0),
+        "payoff":        ("chime.mp3", -16.0),
     },
 }
 DEFAULT_SFX_PROFILE = "data"
 
 
+_PEAK_CACHE: dict[str, float] = {}
+
+
+def _peak_dbfs(path: Path) -> float:
+    """Пиковый уровень файла. Нужен, чтобы привести разношёрстные сэмплы бандла к одному
+    целевому уровню в миксе. Измеряем один раз на файл за процесс."""
+    key = str(path)
+    if key in _PEAK_CACHE:
+        return _PEAK_CACHE[key]
+    proc = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(path),
+                           "-af", "volumedetect", "-f", "null", "-"],
+                          capture_output=True, text=True)
+    peak = 0.0
+    for line in proc.stderr.splitlines():
+        if "max_volume:" in line:
+            try:
+                peak = float(line.split("max_volume:")[1].strip().split()[0])
+            except (IndexError, ValueError):
+                peak = 0.0
+    _PEAK_CACHE[key] = peak
+    return peak
+
+
 def _sfx_plan(profile: str, events: list[tuple[float, str]]) -> list[tuple[float, str, float]]:
-    """Семантические события → конкретные (время, файл, громкость) по выбранному профилю.
+    """Семантические события → (время, файл, ЦЕЛЕВОЙ ПИК в dBFS) по выбранному профилю.
     `overlay:*` — фолбэк для видов графики, у которых нет отдельной записи."""
     table = SFX_PROFILES.get(profile, SFX_PROFILES[DEFAULT_SFX_PROFILE])
     out = []
@@ -675,16 +698,22 @@ def _mix_audio(video_mp4: Path, voice_wav: Path, out_mp4: Path, total: float,
         mix_labels.append("[bgd]")
         idx += 1
 
-    for n, (t, fname, gain) in enumerate(events):
-        inputs += ["-i", str(files[fname])]
+    for n, (t, fname, target_dbfs) in enumerate(events):
+        src = files[fname]
+        inputs += ["-i", str(src)]
         delay_ms = int(max(t, 0.0) * 1000)
-        parts.append(f"[{idx}:a]volume={gain}dB,aresample=48000,"
+        # приводим сэмпл к целевому пику: сколько не хватает до него от измеренного
+        gain = target_dbfs - _peak_dbfs(src)
+        parts.append(f"[{idx}:a]volume={gain:.1f}dB,aresample=48000,"
                      f"adelay={delay_ms}|{delay_ms},atrim=0:{total:.3f}[s{n}]")
         mix_labels.append(f"[s{n}]")
         idx += 1
 
     parts.append(f"{''.join(mix_labels)}amix=inputs={len(mix_labels)}:duration=first:"
-                 f"normalize=0,alimiter=limit=0.94[aout]")
+                 f"normalize=0,alimiter=limit=0.89:level=0[aout]")   # ≈ −1 dBFS: таргет True Peak платформ.
+                 # level=0 обязателен: по умолчанию alimiter САМ подтягивает сигнал
+                 # к потолку, и понижение limit делало микс громче, а не тише
+                 # плюс запас на овершут AAC (замер 2026-08-12 показывал пик ровно 0.0 dB)
     fc = ";".join(parts)
     cmd = ["ffmpeg", "-y"] + inputs + [
         "-filter_complex", fc, "-map", "0:v", "-map", "[aout]",
