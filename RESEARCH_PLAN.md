@@ -45,6 +45,17 @@
 - **R18/R19/R20. Медиапланы 30 дней + долгосрочная стратегия** по 3 каналам → `18_/19_/20_*.md`.
 - **R21. Айдентика 3 каналов** → `21_channel_branding.md`.
 
+## Актуальный VitalLogic PL — внешний ресёрч
+
+- **R69. Внешний цикл медиапланирования VitalLogic PL** →
+  `autopilot_factory/channels/vitallogic_bad_pl/external_research_plan.md`.
+  Использует только внешние поисковые подсказки, YouTube top/outliers, комментарии под
+  внешними роликами, сезонность и официальные/primary/review источники. Собственные метрики
+  канала подключаются только отдельным post-publication циклом. Первый выполненный цикл и
+  43 идеи с форматами сохранены в
+  `autopilot_factory/channels/vitallogic_bad_pl/external_media_plan_2026-08-22.md`; raw-слои
+  лежат в `orchestration/idea_backlog/vitallogic_external_*_2026-08-22.json`.
+
 ## Сквозное — аудит пайплайна 2026-07-01 ✅
 - **R22. Архитектура пайплайна целиком + сравнение с n8n** → `22_pipeline_architecture_n8n.md`.
 - **R23. Retention-редактирование/пейсинг статичных AI-кадров** → `23_retention_editing_pacing.md`.

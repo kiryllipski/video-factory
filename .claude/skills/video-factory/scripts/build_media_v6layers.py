@@ -54,8 +54,10 @@ _SHEET_TECH = (
     "background stays perfectly even right up to each object's edge. "
     "Background: " + collage_elements.SHEET_BG_HINT + "."
 )
-_SHEET_NEGATIVE = ("NEGATIVE: readable words, printed labels, brand names, logos, watermarks, "
-                   "objects touching or overlapping, busy or patterned background, 3d render.")
+_SHEET_NEGATIVE = ("NEGATIVE: random fake lettering, dense copy, watermarks, "
+                   "objects touching or overlapping, busy or patterned background, 3d render. "
+                   "Short planned labels, brand marks and screen content are allowed when "
+                   "called for by the storyboard.")
 
 
 # --- контракт раскладки ----------------------------------------------------------

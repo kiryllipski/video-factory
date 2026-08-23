@@ -6,7 +6,11 @@
 канал: vitallogic_bad_pl (единственный публикующийся на 2026-08-05)
 ---
 
-# studio_context — Канал «VitalLogic» (БАД / Wellness, PL)
+# LEGACY: studio_context v1–v6 — Канал «VitalLogic» (БАД / Wellness, PL)
+
+> Этот playbook описывает старую добавочную монокультуру и сохранён для исторического
+> сравнения. Текущая редакционная политика шире: см.
+> [`autopilot_factory/channels/vitallogic_bad_pl/editorial_policy.md`](../../autopilot_factory/channels/vitallogic_bad_pl/editorial_policy.md).
 
 > Per-channel конфиг (роли scriptwriter/compliance/visual/qa). Гео/язык: **PL** (польский, весь
 > текст — заголовок/озвучка/субтитры/on_screen_text на польском). Голос TTS: Aoede, «warm, caring,

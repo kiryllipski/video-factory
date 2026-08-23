@@ -76,9 +76,10 @@ _COLLAGE_TECH = (
     "illegible print texture, never readable words or headlines."
 )
 
-_NEGATIVE = ("NEGATIVE: readable words, printed headlines, captions, lettering, brand names, "
-             "logos, watermarks, 3d render, CGI, photorealistic scene, smooth airbrushed "
-             "gradients, an outer frame or mat around the whole poster.")
+_NEGATIVE = ("NEGATIVE: random fake lettering, dense copy, floating captions, watermarks, "
+             "3d render, CGI, photorealistic scene, smooth airbrushed "
+             "gradients, an outer frame or mat around the whole poster. Short planned labels "
+             "and planned labels, brand marks and screen content are allowed when called for by the storyboard.")
 
 
 def _load(run_dir: Path, name: str, model):

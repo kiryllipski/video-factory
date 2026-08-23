@@ -93,7 +93,8 @@
 
 **Этикетки и упаковка — можно.** Ниша про составы и дозировки. Но в этой теме надпись
 существует как **гравировка/травление на стекле**: «short generic wording etched into the
-frosted glass surface (ingredient name, dosage, form)». Реальные торговые марки — нельзя.
+frosted glass surface (ingredient name, dosage, form)». Реальные торговые марки и логотипы
+разрешены, если они нужны сцене; сохраняй их без искажения.
 
 **Запрещённые слова в промпте:** worn, scuffed, scratched, distressed, dusty, gritty,
 kitchen, table, wooden, cozy, lifestyle, doctor, lab coat, а также любые UI-слова

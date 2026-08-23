@@ -447,14 +447,33 @@ def _parse_json_array(raw: str):
 # ─────────────────────────── channel context ───────────────────────────
 
 def _load_channel_ctx(channel: str) -> str:
-    """Короткий контекст канала из studio_context.md (позиционирование + рубрики)."""
-    p = _PROJECT_ROOT / "autopilot_factory" / "channels" / channel / "studio_context.md"
-    if not p.exists():
+    """Короткий контекст канала: редакционная политика + производственные рубрики.
+
+    Канонический scope хранится в `editorial_policy.md`; v7-контекст добавляется как
+    производственный слой. Старый `studio_context.md` намеренно не используется: там
+    рубрики v1-v6 (Objaw→Błąd / Zła Para / Mit), от которых пайплайн ушёл ещё в v7."""
+    base = _PROJECT_ROOT / "autopilot_factory" / "channels" / channel
+    paths = [base / "editorial_policy.md", base / "studio_context_v7.md"]
+    existing = [p for p in paths if p.exists()]
+    if not existing:
         return f"(канал '{channel}' без studio_context.md)"
-    text = p.read_text(encoding="utf-8")
-    # берём начало до раздела визуала/TTS — там позиционирование, ЦА, рубрики, хук
-    cut = re.split(r"\n##\s+(?:[4-9]|1[0-9])\.", text)[0]
-    return cut[:3500]
+    chunks = []
+    for p in existing:
+        text = p.read_text(encoding="utf-8")
+        # Для v7 берём начало до визуала/TTS; policy читаем целиком, поскольку там scope.
+        if p.name != "editorial_policy.md":
+            text = re.split(r"\n##\s+(?:[4-9]|1[0-9])\.", text)[0]
+            text = text[:2200]
+        else:
+            # Оставляем место для производственных названий рубрик ниже; полный policy
+            # сохраняется на диске и читается отдельно перед глубоким ресёрчем.
+            text = text[:3600]
+        chunks.append(text)
+    chunks.append(
+        "AVAILABLE PRODUCTION RUBRICS: plate, day_body, how_much, really_true, label, "
+        "body_signals, at_shelf, kitchen_chem, movement, brain, performance, research_lab."
+    )
+    return "\n\n--- PRODUCTION CONTEXT ---\n\n".join(chunks)[:6200]
 
 
 # ─────────────────────────── CLI ───────────────────────────

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Viral Shorts"
+  short_description: "Create lively, ironic Polish VitalLogic Shorts"
+  default_prompt: "Create and validate a high-upside Polish VitalLogic Short with Codex-authored strategy, expressive varied-scale imagegen frames, lively male narration, script, prompts, metadata, and QA; do not publish unless separately authorized."

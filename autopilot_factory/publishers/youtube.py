@@ -71,13 +71,19 @@ def _archive_to_icloud(run: Path, channel: str):
         pass
     return dest_dir
 
-# Каденс публикаций (research/53 — batch-публикация душит охват): 2/день, фиксированные слоты.
-# UTC-эквиваленты 06:00/14:00 Europe/Warsaw (CEST=UTC+2). Единственное место, где это число живёт —
+# Каденс публикаций (research/53 — batch-публикация душит охват): фиксированные слоты.
+# **1/день, 06:00 Europe/Warsaw (04:00 UTC)** — решение владельца 2026-08-13: второй ролик дня
+# перестал получать распространение (12.08: утренний 915 просмотров, дневной — 5; 13.08 та же
+# картина), режем каденс вдвое, пока не научимся стабильно набирать просмотры. Оставлен именно
+# утренний слот: по 74 роликам медианы слотов равны (04:00 — 153, 12:00 — 164), но в 04:00 больше
+# верхних выбросов (1546/1041/920/915/858) и именно он выжил в оба провальных дня.
+# Прежнее значение — [(4, 0), (12, 0)]; вернуть, когда охват восстановится.
+# Единственное место, где это число живёт —
 # раньше каждый вызывающий (люди/агенты/скрипты) пересчитывал слоты сам, независимо и по-разному
 # (см. STATUS.md §0г, 2026-07-27: обнаружено 16 задвоенных слотов из-за минимум 2 разных механизмов
 # подбора «следующего слота» — ни один не сверялся с реальным расписанием на YouTube). Теперь любой
 # вызов upload проверяется/подбирается ЖИВЫМ запросом к каналу — не локальным файлом/логом.
-CADENCE_SLOTS_UTC = [(4, 0), (12, 0)]  # (час, минута) UTC
+CADENCE_SLOTS_UTC = [(4, 0)]  # (час, минута) UTC
 
 
 def _scheduled_occupied_utc(yt) -> set:
@@ -358,11 +364,39 @@ def _upload_one(yt, args, occupied: set):
     except Exception as exc:
         print(f"[prepublisher] warning: проверка не сработала ({exc}); публикация продолжается.")
 
-    title = (pkg.get("title") or run.name)[:100]
-    description = pkg.get("description", "")
-    tags = [h.lstrip("#") for h in pkg.get("hashtags", [])][:15]
-    if "Shorts" not in tags:
-        tags.append("Shorts")
+    title = (pkg.get("title") or run.name).strip()
+    if not title:
+        raise ValueError("publish_package title is empty")
+    if len(title) > 100:
+        raise ValueError(f"publish_package title exceeds 100 characters ({len(title)})")
+
+    description = (pkg.get("description") or "").strip()
+    if len(description) > 5000:
+        raise ValueError(f"publish_package description exceeds 5000 characters ({len(description)})")
+
+    # Visible hashtags belong in the description; API tags are a separate, optional field.
+    # Do not turn hashtags into API tags and do not force #Shorts as a supposed growth lever.
+    hashtags = [str(h).strip() for h in pkg.get("hashtags", []) if str(h).strip()]
+    invalid_hashtags = [h for h in hashtags if not h.startswith("#")]
+    if invalid_hashtags:
+        raise ValueError("visible hashtags must start with #: " + ", ".join(invalid_hashtags))
+    generic_hashtags = {"#viral", "#fyp", "#trending", "#explore"}
+    if generic_hashtags.intersection(h.casefold() for h in hashtags):
+        raise ValueError("generic reach hashtags are not allowed")
+    missing_hashtags = [h for h in hashtags if h.casefold() not in description.casefold()]
+    if missing_hashtags:
+        description = (description + "\n\n" + " ".join(missing_hashtags)).strip()
+    if len(description) > 5000:
+        raise ValueError("description exceeds 5000 characters after adding visible hashtags")
+
+    tags = []
+    for raw_tag in pkg.get("api_tags", []):
+        tag = str(raw_tag).strip()
+        if not tag or tag.startswith("#"):
+            raise ValueError("api_tags must be non-empty phrases without #")
+        if tag.casefold() not in {existing.casefold() for existing in tags}:
+            tags.append(tag)
+    tags = tags[:15]
 
     # Разрешение слота публикации — ВСЕГДА против расписания канала, снятого живым запросом (не
     # локальных файлов/логов, см. CADENCE_SLOTS_UTC выше), а не заново на каждый вызов: `occupied`
@@ -417,7 +451,7 @@ def _upload_one(yt, args, occupied: set):
     body = {
         "snippet": {
             "title": title,
-            "description": description + ("\n\n#Shorts" if "#Shorts" not in description else ""),
+            "description": description,
             "tags": tags,
             "categoryId": args.category,   # 27=Education (дефолт), см. research/51 — 22 душит discovery
             "defaultLanguage": lang,
@@ -519,13 +553,15 @@ def _upload_one(yt, args, occupied: set):
         pending_marker.unlink()
 
     # Версия пайплайна из run_meta.json (пишет build_media, v2+) — для сравнения v1/v2 в аналитике.
-    pipeline_version = ""
+    pipeline_version, rubric = "", ""
     meta_path = run / "run_meta.json"
     if meta_path.exists():
         try:
-            pipeline_version = json.loads(meta_path.read_text(encoding="utf-8")).get("pipeline_version", "")
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            pipeline_version = meta.get("pipeline_version", "")
+            rubric = meta.get("rubric", "")          # рычаг расширения тем (2026-08-14)
         except Exception:
-            pipeline_version = ""
+            pass
 
     # Накопительный журнал публикаций (append-only) для будущего анализа.
     pub_log = ROOT / "publishers" / "publish_log.jsonl"
@@ -534,7 +570,17 @@ def _upload_one(yt, args, occupied: set):
             "run": run.name, "channel": args.channel, "video_id": vid, "url": url,
             "title": title, "published_at_or_scheduled": result.get("publish_at") or "now",
             "pipeline_version": pipeline_version,
+            "rubric": rubric,
             "title_template": pkg.get("title_template", ""),
+            # Подход к описанию (`long_seo` до 2026-08-13 / `short_context` после). Пишем
+            # прямо в журнал публикаций, потому что описание после заливки можно поменять
+            # руками в Studio, а журнал фиксирует, с чем ролик ушёл в ленту.
+            "description_template": pkg.get("description_template", ""),
+            "description_len": len(description),
+            "distribution_lane": pkg.get("distribution_lane", "feed"),
+            "primary_query": pkg.get("primary_query", ""),
+            "hashtags": hashtags,
+            "api_tags": tags,
         }, ensure_ascii=False) + "\n")
     print(f"[done] {url}\n[saved] {run / 'post_result.json'}")
 
@@ -647,7 +693,7 @@ def main():
     u.add_argument("--category", default="27", help="YouTube categoryId (27=Education, дефолт)")
     u.add_argument("--publish-at", dest="publish_at", default=None,
                    help="Запланировать авто-публикацию. 'auto' — сам подберёт ближайший свободный "
-                        "слот по каденсу 2/день 06:00+14:00 Warsaw живым запросом к каналу "
+                        "слот по каденсу 1/день 06:00 Warsaw живым запросом к каналу "
                         "(рекомендуется). Либо RFC3339 UTC, напр. 2026-07-11T06:00:00Z — если этот "
                         "слот уже занят другим private-видео на канале, будет автоматически сдвинут "
                         "на ближайший свободный (защита от наложений, см. STATUS.md §0г).")

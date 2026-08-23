@@ -1,4 +1,9 @@
-# studio_context — Канал «VitalLogic» (БАД / Wellness, PL)
+# LEGACY: studio_context v1–v6 — Канал «VitalLogic» (БАД / Wellness, PL)
+
+> Этот файл сохранён только для старого production path v1–v6. Он больше не является
+> редакционной политикой канала и не должен использоваться для нового ресёрча или v7/v8.
+> Каноническая политика: [`editorial_policy.md`](editorial_policy.md). Производственные
+> контексты: `studio_context_v7.md` и `studio_context_v8_pl.md`.
 
 > Per-channel конфиг (роли scriptwriter/compliance/visual/qa). Гео/язык: **PL** (польский, весь
 > текст — заголовок/озвучка/субтитры/on_screen_text на польском). Голос TTS: Aoede, «warm, caring,

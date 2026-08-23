@@ -56,11 +56,12 @@ import vision_qa                     # noqa: E402  (v3: машинный QA пи
 PIPELINE_VERSION_EXP = "4.0-exp"
 
 _NEGATIVE = ("NEGATIVE: over-saturated, deep-fried colors, 3d render, plastic skin, cartoon, "
-             "mutated geometry, extra limbs, random text, watermark, logo, white border, "
-             "photo frame, polaroid frame, paper margin, framed print, rounded photo corners, "
-             "readable text, typography, captions, subtitles, labels, diagram annotations, "
-             "infographic text, paragraphs, written words rendered in the image, text overlays — "
-             "image must bleed to all four edges of the canvas and contain NO letters or words anywhere.")
+             "mutated geometry, random fake lettering, watermark, "
+             "white border, photo frame, polaroid frame, paper margin, framed print, "
+             "rounded photo corners, floating captions, subtitle overlays, unplanned callouts, "
+             "dense infographic text, paragraphs, image must bleed to all four edges of the canvas. "
+             "Short planned printed labels, brand marks and device-screen UI are allowed when "
+             "the storyboard calls for them.")
 
 
 def _load(run_dir: Path, name: str, model):

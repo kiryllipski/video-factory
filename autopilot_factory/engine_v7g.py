@@ -160,6 +160,12 @@ def main():
     p.add_argument("--channel", default="vitallogic_bad_pl")
     p.add_argument("--topic", default="")
     p.add_argument("--format", default="", help=f"один из: {', '.join(S.FORMAT_BRIEFS)}")
+    # Рубрика и угол появились в v7 2026-08-14. Тема их не меняет — она про визуальный язык,
+    # а не про то, о чём ролик, — но прокинуть их надо, иначе экспериментальный прогон
+    # нельзя поставить рядом с продакшенным на ту же тему.
+    p.add_argument("--rubric", default="",
+                   help=f"рубрика (по умолчанию — ротация): {', '.join(S.ACTIVE_RUBRICS)}")
+    p.add_argument("--angle", default="", help="угол подачи темы (из медиаплана)")
     p.add_argument("--slug", default="")
     p.add_argument("--go", action="store_true", help="запустить генерацию кадров/озвучки/сборку")
     p.add_argument("--build", default="", metavar="RUN_DIR",
@@ -186,7 +192,8 @@ def main():
     # Префикс в slug — чтобы экспериментальные прогоны были видны в списке runs невооружённым
     # глазом и не путались с продакшеном при загрузке.
     slug = a.slug or ("v7g-" + re.sub(r"[^a-z0-9]+", "-", a.topic.lower()).strip("-")[:36])
-    E7.produce(a.channel, a.topic, a.format, slug, go=a.go)
+    E7.produce(a.channel, a.topic, a.format, slug, go=a.go,
+               rubric=a.rubric, angle=a.angle)
 
 
 if __name__ == "__main__":

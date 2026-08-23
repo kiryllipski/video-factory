@@ -142,11 +142,12 @@ def plan_frames(channel: str, script: schemas.Script) -> schemas.FramePlan:
 
 # --- Стадия 4: кадры (Nano Banana 2, refs для консистентности) ------------------
 _NEGATIVE = ("NEGATIVE: over-saturated, deep-fried colors, 3d render, plastic skin, cartoon, "
-             "mutated geometry, extra limbs, random text, watermark, logo, white border, "
-             "photo frame, polaroid frame, paper margin, framed print, rounded photo corners, "
-             "readable text, typography, captions, subtitles, labels, diagram annotations, "
-             "infographic text, paragraphs, written words rendered in the image, text overlays — "
-             "image must bleed to all four edges of the canvas and contain NO letters or words anywhere.")
+             "mutated geometry, extra limbs, random fake lettering, watermark, "
+             "white border, photo frame, polaroid frame, "
+             "paper margin, framed print, rounded photo corners, floating captions, "
+             "subtitle overlays, unplanned callouts, dense infographic text, paragraphs. "
+             "Short planned printed labels, brand marks and device-screen UI are allowed when "
+             "the storyboard calls for them; preserve their intended wording without distortion.")
 
 
 def generate_frames(plan: schemas.FramePlan, out_dir: Path) -> list[Path]:

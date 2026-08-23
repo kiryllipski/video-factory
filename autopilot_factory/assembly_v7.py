@@ -11,8 +11,9 @@ assembly_v7.py — сборка ролика v7. Отличия от `assembly.p
    Плюс ducking музыки под голос и обрыв музыки перед payoff. Раньше — голос + один трек
    на −21дБ и ни одного акцента (аудит §2.4).
 
-3. **Кадр покрывает диапазон битов**, а не один бит. На границе бита внутри кадра ставится
-   punch-in — визуальное событие без оплаты нового кадра.
+3. **Кадр покрывает диапазон битов**, а не один бит — но не дольше 3с (гейт
+   `engine_v7.MAX_FRAME_S`, 2026-08-13). Толчок масштаба стоит только на смене изображения;
+   внутри одного изображения визуальных толчков нет — они читались как пульсация.
 
 4. **Payoff-карточка** вместо финального фото с вопросом: вывод ролика крупным текстом на
    бренд-фоне. Это кадр, ради которого ролик сохраняют.
@@ -23,6 +24,7 @@ requestAnimationFrame — hyperframes перематывает таймлайн 
 from __future__ import annotations
 import os
 import json
+import re
 import shutil
 import subprocess
 from html import escape
@@ -58,6 +60,23 @@ _HF_JSON = {
 # Бандл SFX едет со скиллом hyperframes-media. Копируем нужные файлы в рабочую папку прогона,
 # чтобы сборка не зависела от наличия скилла в момент рендера.
 SFX_SRC = Path.home() / ".claude" / "skills" / "hyperframes-media" / "assets" / "sfx"
+
+# Шрифт — та же логика: headless Chrome рендера не видит системные шрифты пользователя,
+# только то, что физически лежит рядом с index.html. hyperframes сам пре-бандлит Montserrat,
+# но ТОЛЬКО веса 400/700/900 (hyperframes-creative/references/typography.md) — а CSS этого
+# файла местами просит 600 и 800 (например `.cap` — субтитры — весом 800). Для непробандленных
+# весов браузер синтезирует жирность из ближайшего реального реза, и синтетический bold
+# утолщает базовые формы букв заметно сильнее диакритики — отсюда тонкие ł/ź/ż/ę/ą на фоне
+# жирных остальных букв (замер 2026-08-15). Копируем реальные файлы весов, которые использует
+# CSS (`_FONT_WEIGHTS`), и объявляем @font-face с точным `font-weight` на каждый — тогда
+# синтезировать браузеру нечего.
+FONT_SRC = Path.home() / "Library" / "Fonts"
+_FONT_WEIGHTS: dict[int, str] = {
+    600: "Montserrat-SemiBold.ttf",
+    700: "Montserrat-Bold.ttf",
+    800: "Montserrat-ExtraBold.ttf",
+    900: "Montserrat-Black.ttf",
+}
 
 
 def _node22_env() -> dict:
@@ -103,10 +122,14 @@ def _motion_tween(sel: str, motion: str, start: float, dur: float) -> str:
 
 
 def _frame_clips(frame_spans, motions, beat_starts, beat_durs, total):
-    """Кадр покрывает диапазон битов (v7). Возвращает клипы, твины движения и — отдельно —
-    моменты внутренних границ битов, куда сборка ставит punch-in: визуальное событие
-    посреди длинного кадра, чтобы план не «застывал» (research/01: план ≤2.5с)."""
-    clips, tweens, punches = [], [], []
+    """Кадр покрывает диапазон битов (v7). Возвращает клипы и твины движения.
+
+    Толчок масштаба ставится РОВНО на смену изображения и больше нигде (правило владельца
+    2026-08-13). Внутри одного изображения визуальных толчков нет: в первой партии v7 толчок
+    на каждой границе бита читался как регулярная пульсация картинки. Плотность внутри
+    кадра теперь держат графика и субтитры, а сама картинка меняется чаще — гейт
+    `engine_v7.MAX_FRAME_S` не даёт ей висеть дольше 3с."""
+    clips, tweens = [], []
     # Границы кадров — по округлённым значениям, длительность = разница соседних границ.
     # Независимое округление start и duration давало наложение соседних клипов в 1 мс
     # (линтер: overlapping_clips_same_track, поймано 2026-08-12).
@@ -128,13 +151,15 @@ def _frame_clips(frame_spans, motions, beat_starts, beat_durs, total):
         )
         mo = motions[i] if i < len(motions) else "ken_burns_in"
         tweens.append(_motion_tween(f"#f{i}", mo, start, dur))
-        # Границы битов внутри кадра остаются точками для ЗВУКА, но визуального толчка
-        # на них больше нет. Толчок «вверх и обратно» на каждой границе читался как
-        # регулярная пульсация картинки (владелец, 2026-08-12): для появления кадра такое
-        # уместно, в середине плана — нет. Ритм в середине держат появления графики и
-        # субтитры, а сам кадр едет непрерывным Ken Burns без рывков.
-        punches.extend(beat_starts[b] for b in range(b_from + 1, b_to + 1))
-    return clips, tweens, punches
+        # Толчок на ПОЯВЛЕНИЕ кадра — на обёртке, абсолютными значениями. Обёртка, а не
+        # <img>: основное движение уже пишет `scale` картинки, и второй писатель того же
+        # свойства ломает детерминизм рендера (линтер: gsap_relative_value_second_writer).
+        # Кадру 0 толчок не нужен — у него собственный `hook_punch`.
+        if i:
+            tweens.append(
+                f'tl.fromTo("#fw{i}",{{scale:1.05}},'
+                f'{{scale:1.0,duration:0.22,ease:"power3.out"}},{start:.3f});')
+    return clips, tweens
 
 
 # --- субтитры -------------------------------------------------------------------
@@ -235,10 +260,11 @@ def _num_prefix(value: str) -> tuple[float | None, str, str]:
     return num, "", v[i:]
 
 
-def _overlay_clips(overlays, beat_starts, beat_durs, n_beats):
+def _overlay_clips(overlays, beat_starts, beat_durs, n_beats, source_cards=None):
     """Рендерит графику. Каждый оверлей живёт от своего бита до конца следующего (или до
     конца ролика, если бит последний) — чтобы успел прочитаться, но не залёживался."""
     clips, tweens, sfx_marks = [], [], []
+    source_cards = source_cards or {}
     ordered = sorted(overlays, key=lambda o: o.beat_idx)
     # Окно графики привязано к СВОЕМУ биту плюс короткий хвост.
     #
@@ -273,6 +299,7 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats):
         oid = f"ov{k}"
         kind = ov.kind
         body = ""
+        source_card = None
         if kind == "stat":
             num, _, suffix = _num_prefix(ov.value)
             if num is not None:
@@ -289,19 +316,26 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats):
                 body += f'<div class="statlab">{_accent_html(ov.label)}</div>'
         elif kind == "bar":
             pct = ov.percent if ov.percent is not None else 0
-            body = (f'<div class="barlab">{_accent_html(ov.label)}'
+            label = _accent_html(ov.label) if ov.label else ""
+            value_only = " value-only" if not ov.label else ""
+            body = (f'<div class="barlab{value_only}">{label}'
                     f'<span class="barval">{escape(ov.value or f"{pct}%")}</span></div>'
                     f'<div class="bartrack"><div id="{oid}_f" class="barfill"></div></div>')
             tweens.append(f'tl.fromTo("#{oid}_f",{{width:"0%"}},{{width:"{pct}%",duration:0.65,'
                           f'ease:"power2.out"}},{start + 0.14:.3f});')
         elif kind == "versus":
-            wa = "win" if ov.winner == "a" else ""
-            wb = "win" if ov.winner == "b" else ""
+            # `.lose` — отдельный класс, а не «всё, что не .win»: если winner="none" (нет
+            # заявленного победителя), обе колонки остаются нейтральными, а не притушенными
+            # (см. CSS-комментарий у `.vscol` — вариант B делает иерархию размером/прозрачностью).
+            wa = "win" if ov.winner == "a" else ("lose" if ov.winner == "b" else "")
+            wb = "win" if ov.winner == "b" else ("lose" if ov.winner == "a" else "")
             body = (f'<div class="vs">'
-                    f'<div class="vscol {wa}"><div class="vsval">{escape(ov.value)}</div>'
+                    f'<div class="vscol {wa}"><div class="vsval" data-fit-min="42">'
+                    f'{escape(ov.value)}</div>'
                     f'<div class="vslab">{escape(ov.label)}</div></div>'
                     f'<div class="vsmid">vs</div>'
-                    f'<div class="vscol {wb}"><div class="vsval">{escape(ov.value_b)}</div>'
+                    f'<div class="vscol {wb}"><div class="vsval" data-fit-min="42">'
+                    f'{escape(ov.value_b)}</div>'
                     f'<div class="vslab">{escape(ov.label_b)}</div></div></div>')
         elif kind == "list":
             rows = []
@@ -319,7 +353,11 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats):
             head = f'<div class="lhead">{_accent_html(ov.label)}</div>' if ov.label else ""
             body = head + "".join(rows)
         elif kind == "callout":
-            body = f'<div class="cotext">{_accent_html(ov.label or ov.value)}</div>'
+            # Если Gemini дал и объясняющую подпись, и компактное значение, показываем
+            # значение. Подпись почти всегда дублирует субтитр (например, «уничтожает
+            # патогены» рядом с «74°C») и превращает кадр в две конкурирующие реплики.
+            body = (f'<div class="cotext" data-fit-min="42">'
+                    f'{_accent_html(ov.value or ov.label)}</div>')
         elif kind == "stamp":
             # Кегль от длины: «NIE» и «MIEJSCE 3» — разной ширины, фиксированные 112px
             # обрезали длинный вариант об правый край (поймано на прогоне 2026-08-12).
@@ -331,7 +369,34 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats):
                           f'{{scale:1,opacity:1,rotation:-9,duration:0.26,ease:"power4.out"}},'
                           f'{start + 0.06:.3f});')
         elif kind == "source":
-            body = f'<div class="srctext">{escape(ov.label or ov.value)}</div>'
+            source_card = source_cards.get(bi)
+            if source_card:
+                finding = source_card.get("finding", "")
+                title = source_card.get("title", "")
+                publisher = source_card.get("publisher", "")
+                year = source_card.get("year", "")
+                type_label = source_card.get("type_label", "").strip()
+                reference = source_card.get("reference", "")
+                source_tag = (
+                    f'<div id="{oid}_tag" class="source-tag"><span class="source-dot">'
+                    f'</span>{escape(type_label)}</div>'
+                    if type_label else ""
+                )
+                body = (
+                    f'<article id="{oid}_card" class="source-card">'
+                    f'{source_tag}'
+                    f'<div id="{oid}_finding" class="source-finding" data-fit-min="38" '
+                    f'data-fit-height="132">{escape(finding)}</div>'
+                    f'<div id="{oid}_rule" class="source-rule"></div>'
+                    f'<div id="{oid}_details" class="source-details">'
+                    f'<div class="source-title" data-fit-min="18" data-fit-height="64">'
+                    f'{escape(title)}</div>'
+                    f'<div class="source-meta">{escape(publisher)} · {escape(year)}</div>'
+                    f'<div class="source-reference">{escape(reference)}</div>'
+                    f'</div></article>'
+                )
+            else:
+                body = f'<div class="srctext">{escape(ov.label or ov.value)}</div>'
         elif kind == "timeline":
             n = max(len(ov.items), 1)
             marks = []
@@ -345,7 +410,8 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats):
             head = f'<div class="lhead">{_accent_html(ov.label)}</div>' if ov.label else ""
             body = head + f'<div class="tlwrap"><div class="tlline"></div>{"".join(marks)}</div>'
 
-        clips.append(f'<div id="{oid}" class="clip ov ov-{kind}" data-start="{start:.3f}" '
+        card_class = " source-card-mode" if source_card else ""
+        clips.append(f'<div id="{oid}" class="clip ov ov-{kind} ov-beat-{bi}{card_class}" data-start="{start:.3f}" '
                      f'data-duration="{dur:.3f}" data-track-index="{5 + (k % 2)}">{body}</div>')
         # Каждый оверлей начинает таймлайн погашенным и входит через `fromTo`, а не `from`.
         # `from` оставляет элемент видимым в DOM до инициализации твина: при перемотке
@@ -354,8 +420,23 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats):
         if kind == "stamp":
             pass                                   # у штампа свой вход (slam), задан выше
         elif kind == "source":
-            tweens.append(f'tl.fromTo("#{oid}",{{opacity:0}},{{opacity:1,duration:0.2,'
-                          f'ease:"power1.out"}},{start + 0.05:.3f});')
+            if source_card:
+                # Вариант A: спокойный editorial reveal. Карточка садится без bounce,
+                # затем внутри быстро проявляются рубрика, тезис, линия и библиография.
+                tweens.append(
+                    f'tl.fromTo("#{oid}",{{opacity:0,y:28,scale:0.96}},'
+                    f'{{opacity:1,y:0,scale:1,duration:0.42,ease:"power3.out"}},'
+                    f'{start + 0.04:.3f});'
+                    f'tl.fromTo("#{oid}_tag,#{oid}_finding,#{oid}_details",'
+                    f'{{opacity:0,y:12}},{{opacity:1,y:0,duration:0.28,ease:"power2.out",'
+                    f'stagger:0.055}},{start + 0.14:.3f});'
+                    f'tl.fromTo("#{oid}_rule",{{scaleX:0}},'
+                    f'{{scaleX:1,duration:0.34,ease:"power3.out"}},'
+                    f'{start + 0.23:.3f});'
+                )
+            else:
+                tweens.append(f'tl.fromTo("#{oid}",{{opacity:0}},{{opacity:1,duration:0.2,'
+                              f'ease:"power1.out"}},{start + 0.05:.3f});')
         else:
             tweens.append(f'tl.fromTo("#{oid}",{{opacity:0,y:34,scale:0.94}},'
                           f'{{opacity:1,y:0,scale:1,duration:0.24,'
@@ -383,11 +464,18 @@ def _headline_clip(text: str, dur: float):
         return [], []
     dur = max(dur, 0.8)
     fade = min(0.3, dur / 3)
-    n = len(text.replace("*", ""))
+    plain = text.replace("*", "")
+    n = len(plain)
     fs = 138 if n <= 16 else (120 if n <= 24 else (106 if n <= 34 else 94))
+    # Кириллица содержит широкие слова, и общий char-count этого не видит. Кегль
+    # дополнительно ограничивается самым длинным непрерывным словом внутри safe-width.
+    longest = max((len(x) for x in re.findall(r"[0-9A-Za-zА-Яа-яЁё]+", plain)), default=1)
+    word_cap = int((1080 - 2 * SAFE_SIDE) / (longest * 0.75))
+    fs = max(72, min(fs, word_cap))
     clips = [f'<div id="hscrim" class="clip scrim" data-start="0.000" data-duration="{dur:.3f}" '
              f'data-track-index="3"></div>',
-             f'<div id="headline" class="clip headline" style="font-size:{fs}px" data-start="0.000" '
+             f'<div id="headline" class="clip headline" style="font-size:{fs}px" '
+             f'data-fit-min="72" data-fit-height="520" data-start="0.000" '
              f'data-duration="{dur:.3f}" data-track-index="4">{_accent_html(text.strip())}</div>']
     tweens = [f'tl.to("#headline",{{opacity:0,duration:{fade:.3f},ease:"power1.in"}},{dur - fade:.3f});',
               f'tl.set("#headline",{{opacity:0}},{dur:.3f});',
@@ -396,13 +484,29 @@ def _headline_clip(text: str, dur: float):
     return clips, tweens
 
 
-def _payoff_clip(text: str, start: float, total: float):
+def _headline_duration(beat_durs, frame_spans, until_first_cut: bool) -> float:
+    """Длительность постера: legacy v7 либо ровно до первой смены изображения."""
+    if not beat_durs:
+        return 0.0
+    if until_first_cut and frame_spans:
+        first_to = max(0, min(int(frame_spans[0][1]), len(beat_durs) - 1))
+        return sum(beat_durs[:first_to + 1])
+    duration = beat_durs[0] + (beat_durs[1] if len(beat_durs) > 1 else 0)
+    if len(beat_durs) > 2:
+        duration += beat_durs[2] / 2
+    return min(duration, 4.2)
+
+
+def _payoff_clip(text: str, start: float, total: float, frame_asset: str = "assets/frame0.png"):
     """v7: финальная карточка с ВЫВОДОМ (не с вопросом) — кадр, ради которого ролик сохраняют.
 
-    Правка владельца 2026-08-12: под текстом лежит КАДР 0. Раньше карточка была глухой
-    бренд-плашкой, и финал висел в пустоте. Возврат первого кадра закрывает визуальную петлю
-    «конец = начало»: в ленте ролик уходит на повтор без визуального шва, а первый кадр —
-    единственный, который зритель уже точно видел, поэтому узнаётся мгновенно.
+    Правка владельца 2026-08-12: под текстом лежит КАДР. Раньше карточка была глухой
+    бренд-плашкой, и финал висел в пустоте. Узнаваемый кадр закрывает визуальную петлю
+    «конец = начало»: в ленте ролик уходит на повтор без визуального шва.
+    2026-08-15: `frame_asset` — путь к картинке (относительно index.html). Если движок
+    сгенерировал ОТДЕЛЬНЫЙ payoff-кадр, сюда приходит `assets/payoff.png` (см.
+    `build_and_render`, аргумент `payoff_frame`); иначе, как раньше, берётся `assets/frame0.png`
+    — единственный кадр, который зритель уже точно видел, поэтому узнаётся мгновенно.
     Читаемость текста держит затемняющий скрим поверх кадра, а не заливка."""
     if not text.strip() or start >= total - 0.5:
         return [], []
@@ -412,14 +516,16 @@ def _payoff_clip(text: str, start: float, total: float):
     # ВАЖНО: текст оборачивается во внутренний блок. `.potext` — flex-контейнер, и без обёртки
     # каждый <span> акцента становится отдельным flex-элементом в строке — текст не переносится
     # и уезжает за края кадра (поймано на тестовом рендере 2026-08-12).
+    payoff_layout = " payoff-top" if text.strip().upper() == "WARZYWO. WODA. CZAS." else ""
     clips = [
-        f'<img id="poframe" class="clip poframe" src="assets/frame0.png" '
+        f'<img id="poframe" class="clip poframe" src="{frame_asset}" '
         f'data-start="{start:.3f}" data-duration="{dur:.3f}" data-track-index="9"/>',
         f'<div id="pocard" class="clip pocard" data-start="{start:.3f}" '
         f'data-duration="{dur:.3f}" data-track-index="10"></div>',
-        f'<div id="potext" class="clip potext" data-start="{start:.3f}" '
+        f'<div id="potext" class="clip potext{payoff_layout}" data-start="{start:.3f}" '
         f'data-duration="{dur:.3f}" data-track-index="11">'
-        f'<div class="poinner" style="font-size:{fs}px">{_accent_html(text.strip())}</div></div>']
+        f'<div class="poinner" style="font-size:{fs}px" data-fit-min="58">'
+        f'{_accent_html(text.strip())}</div></div>']
     # `tl.from` оставляет элемент видимым в DOM до инициализации твина: при перемотке
     # полноэкранная карточка накрывала кадры ДО своего окна (линтер:
     # gsap_fullscreen_overlay_starts_visible). Поэтому явный `tl.set` в нуле таймлайна,
@@ -446,6 +552,9 @@ _CSS = f"""
 :root{{--navy:{NAVY};--green:{GREEN};--cream:{CREAM};--yellow:{YELLOW};--ink:{INK}}}
 *{{margin:0;padding:0;box-sizing:border-box}}
 html,body{{width:1080px;height:1920px;overflow:hidden;background:#000}}
+/* Реальные файлы весов подключены через @font-face, вставляемый ПЕРЕД этим блоком
+   (`_font_face_css`, см. `build_and_render`) — имя семейства то же, поэтому здесь ничего
+   менять не нужно, даже если @font-face-блок пуст (нет скопированных файлов). */
 body{{font-family:Montserrat,Inter,"Helvetica Neue",Arial,sans-serif;
 -webkit-font-smoothing:antialiased}}
 .fwrap{{position:absolute;inset:0;overflow:hidden}}
@@ -454,6 +563,7 @@ body{{font-family:Montserrat,Inter,"Helvetica Neue",Arial,sans-serif;
 background-image:url("{_GRAIN_SVG}");background-size:260px 260px}}
 .vig{{position:absolute;inset:0;
 background:radial-gradient(120% 78% at 50% 42%,rgba(0,0,0,0) 44%,rgba(4,8,14,.52) 100%)}}
+.has-source-card .vig{{opacity:.72}}
 
 /* субтитры: safe-зона снизу {SAFE_BOTTOM}px */
 .cap{{position:absolute;left:{SAFE_SIDE}px;right:{SAFE_SIDE}px;bottom:{SAFE_BOTTOM}px;text-align:center;
@@ -469,83 +579,149 @@ text-shadow:0 4px 24px rgba(0,0,0,.85),0 0 2px rgba(0,0,0,.9)}}
 .word:last-child,.word.emph:last-child{{margin-right:0}}
 
 /* постер кадра-0 */
-.headline{{position:absolute;left:56px;right:56px;top:{SAFE_TOP + 60}px;text-align:center;color:#fff;
+.headline{{position:absolute;left:{SAFE_SIDE}px;right:{SAFE_SIDE}px;top:{SAFE_TOP + 60}px;
+max-height:520px;overflow:visible;text-align:center;color:#fff;overflow-wrap:normal;
+word-break:normal;hyphens:none;
 font-weight:900;line-height:1.05;letter-spacing:-1.5px;
 text-shadow:0 6px 34px rgba(0,0,0,.92),0 2px 6px rgba(0,0,0,.95)}}
 .scrim{{position:absolute;left:0;right:0;top:0;height:820px;
 background:linear-gradient(180deg,rgba(5,9,16,.72) 0%,rgba(5,9,16,.46) 54%,rgba(5,9,16,0) 100%)}}
 .hl{{color:var(--yellow)}}
 
-/* ---- слой информационной графики ---- */
+/* ---- слой информационной графики: вариант B «без плашек» (владелец, 2026-08-15) ----
+   Раньше у каждого вида оверлея была своя карточка-подложка (заливка + радиус) и свой
+   акцентный цвет из пяти (жёлтый/зелёный/светло-зелёный/красный/навy) — «по цветам
+   начинает рассыпаться». Теперь ни один вид не рисует заливку-прямоугольник; графика
+   держится на типографике, тени и воздухе. Базовый цвет — белый; единственный цвет,
+   оставшийся в слое графики, — красный контур штампа-вердикта (`.ov-stamp`), потому что
+   штамп теперь редкий и должен быть заметным. В `versus` иерархия «выигравшая сторона
+   крупная и яркая, проигравшая мельче и приглушена» делается размером/прозрачностью,
+   а не цветом (жёлтый/светло-зелёный ушли и оттуда).
+   Читаемость на непредсказуемом фоне нейросети держат ДВА приёма:
+   1) многослойная text-shadow — тот же принцип, что у субтитров (`.cap`) и payoff-карточки;
+   2) `.ov::before` — очень мягкий feathered-скрим радиальным градиентом без чётких краёв
+      (плотность минимальная, ровно чтобы вытянуть контраст); это НЕ плашка — у него нет
+      ни хардкодед-краёв, ни угла, ни собственного цвета текста. `source` из скрима
+      намеренно исключён (`.ov-source::before{{content:none}}`) — самый тихий элемент. */
 .ov{{position:absolute;left:{SAFE_SIDE + 20}px;right:{SAFE_SIDE + 20}px;top:820px;
-color:#fff;text-align:center}}
+color:#fff;text-align:center;
+text-shadow:0 4px 22px rgba(0,0,0,.82),0 1px 5px rgba(0,0,0,.9),0 0 2px rgba(0,0,0,.85)}}
+.ov::before{{content:"";position:absolute;inset:-40px -20px;z-index:-1;
+background:radial-gradient(ellipse 74% 64% at 50% 44%,rgba(0,0,0,.30) 0%,
+rgba(0,0,0,.14) 52%,rgba(0,0,0,0) 78%)}}
+.ov-source::before{{content:none}}
+.ov-beat-5.ov-callout{{top:350px}}
+/* `_accent_html` рисует акцент span'ом `.hl` — глобально (постер/субтитры) он жёлтый,
+   но в слое графики цветом больше не акцентируем: `.ov .hl` перебивает специфичностью
+   базовое правило `.hl` и оставляет акцент только весом. Исключение — `callout`: там
+   акцентное слово ещё и чуть крупнее, чтобы строка без подложки не читалась плоско. */
+.ov .hl{{color:inherit;font-weight:900}}
+.ov-callout .hl{{font-size:1.08em}}
+
 .ov-stat .statnum{{font-size:232px;font-weight:900;line-height:.95;letter-spacing:-6px;
-color:var(--yellow);text-shadow:0 10px 40px rgba(0,0,0,.75)}}
+color:#fff;text-shadow:0 10px 46px rgba(0,0,0,.85),0 2px 12px rgba(0,0,0,.92),
+0 0 4px rgba(0,0,0,.9)}}
 .ov-stat .unit{{font-size:100px;margin-left:10px;letter-spacing:-2px}}
-.ov-stat .statlab{{margin-top:16px;font-size:56px;font-weight:800;color:#fff;
-text-shadow:0 4px 20px rgba(0,0,0,.85)}}
+.ov-stat .statlab{{margin-top:18px;font-size:38px;font-weight:700;text-transform:uppercase;
+letter-spacing:3px;color:rgba(255,255,255,.7)}}
 
 .ov-bar{{padding:0 10px}}
-.barlab{{display:flex;justify-content:space-between;align-items:baseline;font-size:48px;
-font-weight:800;margin-bottom:16px;text-shadow:0 4px 18px rgba(0,0,0,.85)}}
-.barval{{color:var(--yellow);font-size:60px;font-weight:900}}
-.bartrack{{height:46px;background:rgba(10,16,24,.72);border-radius:23px;overflow:hidden;
-box-shadow:0 6px 26px rgba(0,0,0,.5)}}
-.barfill{{height:100%;background:linear-gradient(90deg,var(--green),#8BD98F);border-radius:23px}}
+.barlab{{display:flex;justify-content:space-between;align-items:baseline;font-size:34px;
+font-weight:700;text-transform:uppercase;letter-spacing:2.5px;color:rgba(255,255,255,.7);
+margin-bottom:22px}}
+.barlab.value-only{{justify-content:flex-end}}
+.barval{{color:#fff;font-size:58px;font-weight:900;letter-spacing:-1px;text-transform:none}}
+.bartrack{{height:4px;background:rgba(255,255,255,.28);box-shadow:0 1px 8px rgba(0,0,0,.55)}}
+.barfill{{height:100%;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.5)}}
 
-.vs{{display:flex;align-items:stretch;gap:18px}}
-.vscol{{flex:1;background:rgba(10,18,28,.80);border-radius:22px;padding:26px 14px 22px;
-border:5px solid rgba(255,255,255,.14)}}
-.vscol.win{{border-color:var(--green);background:rgba(18,52,32,.84)}}
-.vsval{{font-size:72px;font-weight:900;color:var(--yellow);line-height:1}}
-.vscol.win .vsval{{color:#8BD98F}}
-.vslab{{font-size:38px;font-weight:700;margin-top:10px;line-height:1.15;color:#EAF0F6}}
-.vsmid{{align-self:center;font-size:44px;font-weight:900;opacity:.85}}
+/* выигравшая колонка крупнее, проигрывающая — мельче. Иерархия делается размером,
+   весом и композицией, но НЕ прозрачностью: числа и подписи должны оставаться читаемыми
+   на любом кадре, включая светлый фон нейросетной иллюстрации. */
+.vs{{display:flex;align-items:center;gap:20px}}
+.vscol{{flex:1;min-width:0;text-align:center}}
+.vscol .vsval{{max-width:100%;font-size:64px;font-weight:800;color:#fff;line-height:1;
+overflow-wrap:normal;word-break:normal;hyphens:none}}
+.vscol .vslab{{margin-top:12px;font-size:30px;font-weight:700;text-transform:uppercase;
+letter-spacing:2px;color:#fff;line-height:1.15}}
+.vscol.win .vsval{{font-size:108px;font-weight:900}}
+.vscol.win .vslab{{color:#fff}}
+.vscol.lose{{opacity:1;transform:translateX(-24px)}}
+.vscol.lose .vsval{{font-size:52px}}
+.vscol.lose .vslab{{font-size:26px;letter-spacing:1px;white-space:nowrap}}
+.vsmid{{align-self:center;font-size:38px;font-weight:800;color:#fff;
+text-transform:uppercase;letter-spacing:3px}}
 
-.lhead{{font-size:50px;font-weight:900;margin-bottom:18px;
-text-shadow:0 4px 18px rgba(0,0,0,.85)}}
-.lrow{{display:flex;align-items:center;gap:18px;text-align:left;
-background:rgba(10,18,28,.78);border-radius:18px;padding:18px 26px;margin-bottom:14px;
-font-size:46px;font-weight:800;line-height:1.1}}
-.lrow .lmark{{font-size:52px;font-weight:900;min-width:52px;text-align:center}}
-.lrow.ok .lmark{{color:var(--green)}}
-.lrow.no .lmark{{color:#FF6B5A}}
+.lhead{{font-size:38px;font-weight:700;text-transform:uppercase;letter-spacing:2.5px;
+margin-bottom:22px;color:rgba(255,255,255,.7)}}
+.lrow{{display:flex;align-items:center;gap:20px;text-align:left;
+border-bottom:1px solid rgba(255,255,255,.3);box-shadow:0 1px 5px rgba(0,0,0,.35);
+padding:18px 4px;font-size:44px;font-weight:700;line-height:1.15}}
+.lrow:last-child{{border-bottom:none;box-shadow:none}}
+.lrow .lmark{{font-size:42px;font-weight:900;min-width:46px;text-align:center;
+color:rgba(255,255,255,.82)}}
 
-.ov-callout .cotext{{display:inline-block;background:var(--yellow);color:var(--ink);
-font-size:58px;font-weight:900;line-height:1.12;padding:20px 34px;border-radius:16px;
-box-shadow:0 14px 40px rgba(0,0,0,.55);letter-spacing:-1px}}
-.ov-callout .hl{{color:var(--navy)}}
+.ov-callout .cotext{{font-size:54px;font-weight:800;line-height:1.26;letter-spacing:-0.5px}}
 
 .ov-stamp{{top:700px}}
-.ov-stamp .stamptext{{display:inline-block;border:11px solid #FF5B47;color:#FF5B47;
-font-weight:900;letter-spacing:4px;padding:14px 36px;border-radius:14px;max-width:100%;
-text-transform:uppercase;background:rgba(8,12,20,.34);
-text-shadow:0 4px 18px rgba(0,0,0,.7)}}
+.ov-stamp .stamptext{{display:inline-block;max-width:100%;font-weight:900;
+letter-spacing:4px;text-transform:uppercase;color:transparent;
+-webkit-text-stroke:4px #FF5B47;
+text-shadow:0 6px 26px rgba(0,0,0,.85),0 2px 8px rgba(0,0,0,.9);
+filter:drop-shadow(0 0 3px rgba(0,0,0,.6))}}
 
 .tlwrap{{position:relative;height:150px;margin-top:26px}}
-.tlline{{position:absolute;left:4%;right:4%;top:26px;height:8px;border-radius:4px;
-background:rgba(255,255,255,.35)}}
+.tlline{{position:absolute;left:4%;right:4%;top:26px;height:2px;
+background:rgba(255,255,255,.32);box-shadow:0 1px 6px rgba(0,0,0,.5)}}
 .tlmark{{position:absolute;top:0;transform:translateX(-50%);width:210px;text-align:center}}
-.tldot{{display:block;width:34px;height:34px;border-radius:50%;background:var(--yellow);
-margin:13px auto 0;box-shadow:0 0 0 8px rgba(42,92,130,.55)}}
-.tllab{{display:block;margin-top:12px;font-size:36px;font-weight:800;line-height:1.1;
-text-shadow:0 3px 14px rgba(0,0,0,.85)}}
+.tldot{{display:block;width:20px;height:20px;border-radius:50%;background:#fff;
+margin:20px auto 0;box-shadow:0 2px 10px rgba(0,0,0,.55),0 0 0 6px rgba(255,255,255,.16)}}
+.tllab{{display:block;margin-top:14px;font-size:34px;font-weight:700;line-height:1.15}}
 
-/* атрибуция: маленькая, намеренно незаметная — сигнал доверия, а не элемент дизайна */
+/* Legacy v7 source: старые сборки без ResearchPack остаются компактными. */
 .ov-source{{top:1225px}}
-.ov-source .srctext{{display:inline-block;background:rgba(8,14,22,.66);color:#CBD8E4;
-font-size:30px;font-weight:600;letter-spacing:.4px;padding:9px 20px;border-radius:8px;
-border-left:6px solid var(--green)}}
+/* Атрибуция — самый тихий элемент слоя, но «тихий» не значит «невидимый». На светлом
+   кадре белое с прозрачностью .62 и без подложки исчезало полностью (замер на ролике
+   opus-ile-cukru-kajzerka, кадр со стеклянной цепью на белом столе). Поднимаем
+   непрозрачность и даём собственную тень: скрим сюда намеренно не приходит. */
+.ov-source .srctext{{display:inline-block;color:rgba(255,255,255,.88);font-size:28px;
+font-weight:600;letter-spacing:.6px;
+text-shadow:0 2px 10px rgba(0,0,0,.92),0 0 3px rgba(0,0,0,.85)}}
 
-/* payoff-карточка: кадр 0 + затемнение, поверх — вывод (петля «конец = начало») */
+/* v8 source, вариант A: полноценная editorial-карточка вместо микроскопической сноски. */
+.ov-source.source-card-mode{{top:380px;left:60px;right:60px;text-align:left;
+text-shadow:none;transform-origin:50% 50%;will-change:transform}}
+.source-card{{box-sizing:border-box;width:100%;padding:44px 54px 40px;
+background:rgba(255,253,247,.96);color:{INK};border:1px solid rgba(14,22,32,.14);
+border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.34),0 3px 12px rgba(0,0,0,.18)}}
+.source-tag{{display:flex;align-items:center;gap:13px;color:#397B54;font-size:24px;
+font-weight:800;letter-spacing:2.1px;text-transform:uppercase;line-height:1.1}}
+.source-dot{{display:inline-block;width:12px;height:12px;border-radius:50%;background:#4B9B68;
+box-shadow:0 0 0 5px rgba(75,155,104,.13)}}
+.source-finding{{margin-top:20px;width:100%;max-height:132px;overflow:hidden;color:{INK};
+font-size:54px;font-weight:900;line-height:1.15;letter-spacing:-1.25px;
+overflow-wrap:break-word}}
+.source-rule{{height:3px;margin:26px 0 22px;background:#397B54;transform-origin:0 50%;
+will-change:transform}}
+.source-details{{color:#25313B}}
+.source-title{{width:100%;max-height:64px;overflow:hidden;font-size:24px;font-weight:700;
+line-height:1.3;letter-spacing:.1px}}
+.source-meta{{margin-top:13px;font-size:22px;font-weight:800;line-height:1.2}}
+.source-reference{{margin-top:8px;color:#68737B;font-size:19px;font-weight:600;
+line-height:1.2;letter-spacing:.3px}}
+
+/* payoff-карточка: кадр (payoff или, по умолчанию, кадр 0) + затемнение, поверх — вывод
+   (петля «конец = начало») */
 .poframe{{position:absolute;inset:0;width:1080px;height:1920px;object-fit:cover}}
 /* затемнение подобрано так, чтобы кадр читался как кадр, а не как фон под текстом:
-   узнаваемость первого кадра — половина смысла петли. Читаемость держит тень текста. */
+   узнаваемость первого кадра — половина смысла петли. Читаемость держит тень текста.
+   Нейтральный чёрный, БЕЗ цветового оттенка (владелец 2026-08-15: синий градиент выпадал
+   из картинки) — плотность та же, что и была: легче сверху, плотнее снизу. */
 .pocard{{position:absolute;inset:0;
-background:linear-gradient(165deg,rgba(20,44,66,.58) 0%,rgba(12,30,46,.70) 52%,
-rgba(8,20,32,.80) 100%)}}
+background:linear-gradient(165deg,rgba(0,0,0,.58) 0%,rgba(0,0,0,.70) 52%,
+rgba(0,0,0,.80) 100%)}}
 .potext{{position:absolute;left:80px;right:80px;top:{SAFE_TOP}px;bottom:{SAFE_BOTTOM - 40}px;
 display:flex;align-items:center;justify-content:center}}
+.potext.payoff-top{{top:80px;bottom:auto;height:300px}}
 .poinner{{width:100%;text-align:center;color:#fff;font-weight:900;line-height:1.12;
 letter-spacing:-1.5px;overflow-wrap:break-word;
 text-shadow:0 6px 32px rgba(0,0,0,.92),0 2px 8px rgba(0,0,0,.95),0 0 3px rgba(0,0,0,.9)}}
@@ -555,12 +731,17 @@ text-shadow:0 6px 32px rgba(0,0,0,.92),0 2px 8px rgba(0,0,0,.95),0 0 3px rgba(0,
 
 def _build_html(frame_spans, motions, beat_words, fallback_captions, beat_starts, beat_durs,
                 overlays, total, headline, headline_dur, payoff_text, payoff_start,
-                emphases) -> tuple[str, list]:
-    fc, ft, punches = _frame_clips(frame_spans, motions, beat_starts, beat_durs, total)
-    oc, ot, ov_sfx = _overlay_clips(overlays, beat_starts, beat_durs, len(beat_starts))
+                emphases, font_css: str = "", payoff_asset: str = "assets/frame0.png",
+                lang: str = "pl", source_cards=None
+                ) -> tuple[str, list]:
+    fc, ft = _frame_clips(frame_spans, motions, beat_starts, beat_durs, total)
+    oc, ot, ov_sfx = _overlay_clips(
+        overlays, beat_starts, beat_durs, len(beat_starts), source_cards=source_cards
+    )
     cc, ct = _caption_clips(beat_words, fallback_captions, beat_starts, beat_durs, emphases)
     hc, ht = _headline_clip(headline, headline_dur)
-    pc, pt = _payoff_clip(payoff_text, payoff_start, total)
+    pc, pt = _payoff_clip(payoff_text, payoff_start, total, frame_asset=payoff_asset)
+    root_class = "has-source-card" if source_cards else ""
     texture = [f'<div id="vig" class="clip vig" data-start="0.000" data-duration="{total:.3f}" '
                f'data-track-index="2"></div>',
                f'<div id="grain" class="clip grain" data-start="0.000" data-duration="{total:.3f}" '
@@ -568,23 +749,42 @@ def _build_html(frame_spans, motions, beat_words, fallback_captions, beat_starts
     clips = fc + texture[:1] + oc + cc + hc + pc + texture[1:]
     tweens = ft + ot + ct + ht + pt
     html = f"""<!doctype html>
-<html lang="pl"><head><meta charset="UTF-8"/>
+<html lang="{escape(lang)}"><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=1080, height=1920"/>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
-<style>{_CSS}</style></head>
+<style>{font_css}{_CSS}</style></head>
 <body>
-<div id="root" data-composition-id="main" data-start="0" data-duration="{total:.3f}"
+<div id="root" class="{root_class}" data-composition-id="main" data-start="0" data-duration="{total:.3f}"
      data-width="1080" data-height="1920">
 {chr(10).join('  ' + c for c in clips)}
 </div>
 <script>
 window.__timelines=window.__timelines||{{}};
+/* Детерминированный safe-fit до регистрации таймлайна. Он нужен не как маскировка
+   плохого текста, а как последний предохранитель от широких слов в кириллице. */
+function hfFitText(){{
+  document.querySelectorAll("[data-fit-min]").forEach(function(el){{
+    const minSize=Number(el.dataset.fitMin)||42;
+    const maxHeight=Number(el.dataset.fitHeight)||
+      (el.parentElement ? el.parentElement.clientHeight : Number.POSITIVE_INFINITY);
+    let size=parseFloat(getComputedStyle(el).fontSize)||minSize;
+    let guard=0;
+    while(size>minSize && guard<80 &&
+          (el.scrollWidth>el.clientWidth+1 || el.scrollHeight>maxHeight+1)){{
+      size-=2;
+      el.style.fontSize=size+"px";
+      guard+=1;
+    }}
+  }});
+}}
+hfFitText();
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(hfFitText);
 const tl=gsap.timeline({{paused:true}});
 {chr(10).join(tweens)}
 window.__timelines["main"]=tl;
 </script></body></html>
 """
-    return html, (punches, ov_sfx)
+    return html, ov_sfx
 
 
 # --- звук -----------------------------------------------------------------------
@@ -648,6 +848,14 @@ SFX_PROFILES: dict[str, dict] = {
 }
 DEFAULT_SFX_PROFILE = "data"
 
+# Низкочастотный удар максимум раз за ролик (владелец 2026-08-15: «максимум один раз»).
+# Раньше он звучал дважды в профиле `data` (и в `soft`/`dense` тоже) — на `overlay:stamp`
+# (impact-bass-2) и на `turn` (impact-bass-1). Приоритет у `turn`: это смысловой поворот
+# ролика, а не декоративная графика. Правило применяется в `_sfx_plan` — то есть для ВСЕХ
+# профилей и для `--remix` тоже, поскольку и обычная сборка, и remix идут через одну функцию.
+_BASS_FILES = {"impact-bass-1.mp3", "impact-bass-2.mp3"}
+_BASS_PRIORITY_EVENT = "turn"
+
 
 _PEAK_CACHE: dict[str, float] = {}
 
@@ -674,16 +882,72 @@ def _peak_dbfs(path: Path) -> float:
 
 def _sfx_plan(profile: str, events: list[tuple[float, str]]) -> list[tuple[float, str, float]]:
     """Семантические события → (время, файл, ЦЕЛЕВОЙ ПИК в dBFS) по выбранному профилю.
-    `overlay:*` — фолбэк для видов графики, у которых нет отдельной записи."""
+    `overlay:*` — фолбэк для видов графики, у которых нет отдельной записи.
+
+    Затем — гейт на низкочастотный удар (`_BASS_FILES`): не больше ОДНОГО за ролик, во всех
+    профилях. Если басовых событий вышло больше, оставляем `_BASS_PRIORITY_EVENT` (`turn`),
+    если он среди них, иначе — первое по порядку; остальным даём фолбэк того же профиля
+    (`overlay:*`) — тот же звук, что уже играет на прочей графике, а не тишину."""
     table = SFX_PROFILES.get(profile, SFX_PROFILES[DEFAULT_SFX_PROFILE])
-    out = []
+    resolved: list[list] = []           # [t, ev, fname, gain] — список ради точечной правки
     for t, ev in events:
         hit = table.get(ev)
         if hit is None and ev.startswith("overlay:"):
             hit = table.get("overlay:*")
         if hit:
-            out.append((t, hit[0], hit[1]))
-    return out
+            resolved.append([t, ev, hit[0], hit[1]])
+
+    bass_idx = [i for i, r in enumerate(resolved) if r[2] in _BASS_FILES]
+    if len(bass_idx) > 1:
+        keep = next((i for i in bass_idx if resolved[i][1] == _BASS_PRIORITY_EVENT), bass_idx[0])
+        fallback = table.get("overlay:*", ("click-soft.mp3", -14.0))
+        for i in bass_idx:
+            if i != keep:
+                resolved[i][2], resolved[i][3] = fallback
+
+    return [(t, f, g) for t, _ev, f, g in resolved]
+
+
+def _stage_font(work_dir: Path) -> list[int]:
+    """Копирует нужные веса Montserrat из `FONT_SRC` в `assets/fonts` рабочей папки — тем же
+    механизмом, что `_stage_sfx` для звука: копия рядом с прогоном, чтобы рендер не зависел
+    от того, что стоит на машине в момент запуска `hyperframes render`.
+
+    Если файла веса нет — печатает понятное предупреждение и просто не включает этот вес в
+    @font-face; сборка не падает, а тот вес рендерится как раньше (системным/синтетическим
+    шрифтом)."""
+    dest = work_dir / "assets" / "fonts"
+    ok: list[int] = []
+    if not FONT_SRC.is_dir():
+        print(f"[WARN] шрифт: папка {FONT_SRC} не найдена — рендер использует системный "
+              f"Montserrat (как раньше), диакритика может остаться тоньше базовых букв")
+        return ok
+    dest.mkdir(parents=True, exist_ok=True)
+    for weight, fname in _FONT_WEIGHTS.items():
+        src = FONT_SRC / fname
+        if not src.exists():
+            print(f"[WARN] шрифт: {src} не найден — вес {weight} рендерится системным "
+                  f"шрифтом (как раньше)")
+            continue
+        dst = dest / fname
+        if not dst.exists():
+            shutil.copy2(src, dst)
+        ok.append(weight)
+    return ok
+
+
+def _font_face_css(weights: list[int]) -> str:
+    """@font-face на каждый вес, который реально удалось скопировать (`_stage_font`).
+    `font-family` остаётся тем же именем ("Montserrat"), что и в `_CSS` — только конкретный
+    вес переключает браузер с системного/синтетического реза на реальный файл."""
+    if not weights:
+        return ""
+    faces = [
+        f'@font-face{{font-family:"Montserrat";src:url("assets/fonts/{_FONT_WEIGHTS[w]}") '
+        f'format("truetype");font-weight:{w};font-style:normal;font-display:block}}'
+        for w in sorted(weights)
+    ]
+    return "\n".join(faces) + "\n"
 
 
 def _stage_sfx(work_dir: Path, filenames: set[str]) -> dict[str, Path]:
@@ -820,18 +1084,39 @@ def build_and_render(frames: list[Path], frame_spans, motions, beat_words, fallb
                      beat_durs, overlays, emphases, voice_wav: Path, out_mp4: Path,
                      work_dir: Path, headline: str = "", payoff_text: str = "",
                      turn_beat_idx: int | None = None, bgm_wav: Path | None = None,
-                     sfx_profile: str = DEFAULT_SFX_PROFILE) -> Path:
+                     sfx_profile: str = DEFAULT_SFX_PROFILE,
+                     payoff_frame: Path | None = None,
+                     headline_until_first_cut: bool = False,
+                     lang: str = "pl", layout_gate: bool = False,
+                     source_cards: dict[int, dict[str, str]] | None = None) -> Path:
     """Собирает HTML, рендерит через hyperframes и микширует звук.
 
-    frame_spans — [(beat_from, beat_to), ...] по одному на кадр; длина == len(frames).
-    beat_durs   — фактические длительности битов из TTS (они ведут всю шкалу времени).
-    overlays    — объекты schemas_v7.Overlay.
+    frame_spans  — [(beat_from, beat_to), ...] по одному на кадр; длина == len(frames).
+    beat_durs    — фактические длительности битов из TTS (они ведут всю шкалу времени).
+    overlays     — объекты schemas_v7.Overlay.
+    payoff_frame — 2026-08-15: отдельный кадр для payoff-карточки (движок генерирует его
+                   отдельно от кадра 0). Если не передан (None) — payoff-карточка, как и
+                   раньше, использует `assets/frame0.png`; обратная совместимость со старыми
+                   вызовами и пересборками (`--rebuild`) без этого аргумента обязательна.
     """
     work_dir = Path(work_dir)
     assets = work_dir / "assets"
     assets.mkdir(parents=True, exist_ok=True)
     for i, p in enumerate(frames):
         shutil.copy(p, assets / f"frame{i}.png")
+
+    payoff_asset = "assets/frame0.png"
+    if payoff_frame is not None:
+        payoff_frame = Path(payoff_frame)
+        if payoff_frame.exists():
+            shutil.copy(payoff_frame, assets / "payoff.png")
+            payoff_asset = "assets/payoff.png"
+        else:
+            print(f"[WARN] payoff_frame={payoff_frame} не найден — payoff-карточка "
+                  f"использует assets/frame0.png (как раньше)")
+
+    font_css = _font_face_css(_stage_font(work_dir))
+
     (work_dir / "hyperframes.json").write_text(json.dumps(_HF_JSON, indent=2), encoding="utf-8")
     (work_dir / "meta.json").write_text(
         json.dumps({"id": work_dir.name, "name": work_dir.name}), encoding="utf-8")
@@ -849,20 +1134,59 @@ def build_and_render(frames: list[Path], frame_spans, motions, beat_words, fallb
 
     headline_dur = 0.0
     if headline.strip() and beat_durs:
-        headline_dur = beat_durs[0] + (beat_durs[1] if len(beat_durs) > 1 else 0)
-        if len(beat_durs) > 2:
-            headline_dur += beat_durs[2] / 2
-        headline_dur = min(headline_dur, 4.2)
+        # Заголовок v8 относится к первому изображению и исчезает ровно с его сменой.
+        # Старое поведение v7 оставлено по умолчанию для обратной совместимости.
+        headline_dur = _headline_duration(
+            beat_durs, frame_spans, headline_until_first_cut
+        )
 
     # payoff-карточка занимает последний бит (и предпоследний, если он короткий)
     payoff_start = beat_starts[-1] if beat_starts else 0.0
     if len(beat_durs) >= 2 and beat_durs[-1] < 1.6:
         payoff_start = beat_starts[-2]
 
-    html, (punches, ov_sfx) = _build_html(
+    html, ov_sfx = _build_html(
         frame_spans, motions, beat_words, fallback_captions, beat_starts, beat_durs,
-        overlays, total, headline, headline_dur, payoff_text, payoff_start, emphases)
+        overlays, total, headline, headline_dur, payoff_text, payoff_start, emphases,
+        font_css=font_css, payoff_asset=payoff_asset, lang=lang,
+        source_cards=source_cards)
     (work_dir / "index.html").write_text(html, encoding="utf-8")
+
+    if layout_gate:
+        # HyperFrames inspect видит фактические bounding boxes после загрузки шрифта.
+        # Блокируем только выход ЗРИТЕЛЬСКОГО текста за canvas; Ken Burns закономерно
+        # выводит края изображений за clipping-wrapper и не относится к этой проверке.
+        inspected = subprocess.run(
+            ["npx", "--yes", "hyperframes", "inspect", "--json"],
+            cwd=str(work_dir), capture_output=True, text=True, env=_node22_env(),
+        )
+        raw = inspected.stdout
+        start = raw.find("{")
+        if start < 0:
+            raise RuntimeError(
+                "HyperFrames layout gate не вернул JSON: "
+                + (inspected.stderr or raw)[-500:]
+            )
+        report = json.loads(raw[start:])
+        (work_dir / "layout_inspect.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        text_selectors = {
+            "#headline", "div.vsval", "div.vslab", "div.statnum", "div.statlab",
+            "div.cotext", "div.poinner", "div.barlab", "span.barval",
+            "div.source-finding", "div.source-title", "div.source-meta",
+            "div.source-reference",
+        }
+        overflow = [
+            issue for issue in report.get("issues", [])
+            if issue.get("code") in {"canvas_overflow", "clipped_text"}
+            and issue.get("selector") in text_selectors
+        ]
+        if overflow:
+            details = "; ".join(
+                f"{item.get('selector')}: {item.get('text', '')!r}" for item in overflow
+            )
+            raise RuntimeError(f"viewer text вышел за safe canvas: {details}")
 
     subprocess.run(["npx", "--yes", "hyperframes", "render", "-o", "video.mp4"],
                    cwd=str(work_dir), check=True, env=_node22_env())

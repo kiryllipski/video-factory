@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VitalLogic — карта инструкций Codex</title>
+  <style>
+    :root { --ink:#122033; --muted:#5b6980; --bg:#f5f7fb; --panel:#fff; --line:#dfe5ef; --blue:#246bfd; --mint:#16a085; --amber:#e99222; --violet:#7656d6; }
+    * { box-sizing:border-box; } body { margin:0; font:16px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; color:var(--ink); background:var(--bg); }
+    main { max-width:1180px; margin:auto; padding:42px 24px 64px; } h1 { font-size:clamp(30px,5vw,54px); letter-spacing:-.045em; line-height:1.02; margin:0 0 14px; } h2 { margin:42px 0 14px; font-size:24px; letter-spacing:-.025em; } h3 { margin:0 0 8px; font-size:17px; } p { margin:0 0 12px; } .lead { max-width:800px; color:var(--muted); font-size:19px; }
+    .note { border:1px solid #f0c879; background:#fff7e9; padding:16px 18px; border-radius:14px; margin-top:24px; } code { font:13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background:#edf1f7; border-radius:5px; padding:2px 5px; overflow-wrap:anywhere; }
+    .flow { display:grid; gap:12px; margin:22px 0; } .step { display:grid; grid-template-columns:44px 1fr auto; align-items:center; gap:16px; padding:16px 18px; background:var(--panel); border:1px solid var(--line); border-radius:16px; box-shadow:0 4px 18px rgba(31,55,93,.04); } .n { display:grid; place-items:center; width:36px; height:36px; color:#fff; background:var(--blue); font-weight:800; border-radius:50%; } .step small, td small { color:var(--muted); display:block; } .arrow { color:#9eabc0; text-align:center; font-size:24px; height:18px; }
+    .tag { white-space:nowrap; border-radius:999px; padding:4px 9px; background:#edf3ff; color:#215bbb; font-size:12px; font-weight:700; } .tag.conditional { background:#f5efff; color:#6448b7; } .tag.gate { background:#e9f8f3; color:#087a5e; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; } .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px; } .card ul { padding-left:20px; margin:10px 0 0; } .card li { margin:6px 0; } .path { color:var(--blue); font-weight:700; word-break:break-word; }
+    table { width:100%; border-collapse:separate; border-spacing:0; background:var(--panel); border:1px solid var(--line); border-radius:16px; overflow:hidden; } th,td { padding:14px 15px; text-align:left; vertical-align:top; border-bottom:1px solid var(--line); } th { background:#f0f4fa; font-size:13px; color:#506079; } tr:last-child td { border-bottom:0; }
+    .policy { border-left:4px solid var(--mint); padding:16px 18px; background:#effaf6; border-radius:0 12px 12px 0; } .policy strong { color:#057458; } .muted { color:var(--muted); }
+    @media (max-width:760px) { main { padding:30px 16px 48px; } .grid { grid-template-columns:1fr; } .step { grid-template-columns:40px 1fr; } .step .tag { grid-column:2; justify-self:start; } table,thead,tbody,tr,td,th { display:block; } thead { display:none; } td { padding:10px 14px; } td:first-child { padding-top:16px; font-weight:700; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Карта инструкций Codex<br>для роликов VitalLogic</h1>
+  <p class="lead">Это не дамп промптов, а рабочая карта: какие инструкции берутся в производство, в каком порядке, что именно они решают и какие проверки нельзя пропускать.</p>
+  <div class="note"><strong>Главный принцип.</strong> Прямое сообщение владельца всегда выше локальных инструкций. Публикация, загрузка и изменение расписания происходят только после отдельной команды владельца.</div>
+
+  <h2>Последовательность производства</h2>
+  <section class="flow">
+    <div class="step"><div class="n">0</div><div><h3>Бриф владельца</h3><small>Тема, язык, цель, стиль, референсы, ограничения и разрешение либо запрет на публикацию.</small></div><span class="tag">высший приоритет</span></div>
+    <div class="arrow">↓</div>
+    <div class="step"><div class="n">1</div><div><h3>Редакционное решение</h3><small>Выбор одной понятной зрителю напряжённости, формата, хука и доказательного угла. Здесь же формируется гипотеза, а не обещание просмотров.</small></div><span class="tag">стратегия</span></div>
+    <div class="arrow">↓</div>
+    <div class="step"><div class="n">2</div><div><h3>Исследование и границы утверждений</h3><small>Официальные и первичные источники → <code>ResearchPack</code> → claim_id, допустимая формулировка, ограничение и запрещённый оверклейм.</small></div><span class="tag">доказательность</span></div>
+    <div class="arrow">↓</div>
+    <div class="step"><div class="n">3</div><div><h3>Сценарий и визуальный план</h3><small>9–12 смысловых битов, каждый с речью, экранным текстом, эмоцией, claim_id и одним понятным кадром. Сначала сценарий, затем медиа.</small></div><span class="tag">авторский этап</span></div>
+    <div class="arrow">↓</div>
+    <div class="step"><div class="n">4</div><div><h3>Медиа-ветки</h3><small>Кадры: только по запросу применяются встроенный imagegen и его правила. Озвучка: Gemini TTS, мужской Charon по умолчанию. Рендер: HyperFrames.</small></div><span class="tag conditional">условная ветка</span></div>
+    <div class="arrow">↓</div>
+    <div class="step"><div class="n">5</div><div><h3>Проверки перед релизом</h3><small>Схема JSON, связи claims, комплаенс, факт-чек, layout, 1080×1920 H.264/AAC, три реальных стоп-кадра и release gate.</small></div><span class="tag gate">блокирующий этап</span></div>
+    <div class="arrow">↓</div>
+    <div class="step"><div class="n">6</div><div><h3>Публикация — только при явной команде</h3><small>Живой API-проверкой подтверждаются канал и занятость слота; после upload читаются обратно ID, privacy и publishAt сервера.</small></div><span class="tag gate">отдельное разрешение</span></div>
+  </section>
+
+  <h2>Какие локальные инструкции участвуют</h2>
+  <table>
+    <thead><tr><th>Источник</th><th>Когда применяется</th><th>Что определяет</th></tr></thead>
+    <tbody>
+      <tr><td><span class="path">skills/codex-viral-shorts/SKILL.md</span></td><td>Каждый авторский VitalLogic Short</td><td>Редакционный порядок, формат, польская локализация, речь Charon, допустимая ирония, imagegen-ветка, QA и отдельный publish-gate.</td></tr>
+      <tr><td><span class="path">autopilot_factory/channels/vitallogic_bad_pl/studio_context_v8_pl.md</span></td><td>Польский production-run</td><td>Аудитория, локальный бытовой контекст, доказательная иерархия, голос и границы медицинских формулировок.</td></tr>
+      <tr><td><span class="path">docs/PIPELINE_V8.md</span></td><td>v8-сборка и её аудит</td><td>Контракт ResearchPack, TTS, source-card, финальные gates и что считается только диагностикой.</td></tr>
+      <tr><td><span class="path">autopilot_factory/engine_v8.py + schemas_v8.py</span></td><td>Создание и сборка пакета</td><td>Машинные правила: минимумы, claim_id, порядок актов, overlays, источники, media-метаданные и release report.</td></tr>
+      <tr><td><span class="path">orchestration/audio_agent.py</span></td><td>Каждый TTS-бит</td><td>Gemini <code>gemini-3.1-flash-tts-preview</code>, голос Charon, style и TTS-кэш по тексту/голосу/скорости.</td></tr>
+      <tr><td><span class="path">imagegen skill</span></td><td>Только если пользователь просит imagegen</td><td>Как генерировать и сохранять оригинальные кадры; не подменять его другой image-моделью.</td></tr>
+      <tr><td><span class="path">publishers/youtube.py</span></td><td>Только после явной команды на upload/schedule</td><td>Проверка канала и слота через live API, private + publishAt, AI disclosure, обратное серверное подтверждение.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Правила, добавленные после разбора ролика про яйцо</h2>
+  <div class="policy">
+    <p><strong>Число — это один законченный доказательный момент.</strong> В речи обязательно называются объект, число и единица: «в крупном яйце примерно 186 миллиграммов холестерина». Числовой overlay появляется в том же бите одновременно с числом или максимум через 0,5 секунды. Отдельный TTS-бит не должен заканчиваться на грамматически незавершённой мысли.</p>
+    <p><strong>Никаких нерасшифрованных медицинских сокращений.</strong> `LDL`, `ApoB`, `HbA1c` и подобные не попадают в озвучку, субтитры, постер, overlay, payoff, заголовок или CTA без простого объяснения в том же бите. Если различие не критично для истории, выбирается подтверждённая бытовая формулировка.</p>
+  </div>
+
+  <h2>Что именно проверяет Codex перед отдачей MP4</h2>
+  <div class="grid">
+    <article class="card"><h3>Смысл и факт</h3><ul><li>Каждый значимый факт связан с <code>claim_id</code>.</li><li>Нет абсолютных обещаний, диагнозов или превращения корреляции в гарантию.</li><li>Payoff следует из доказательства, а не просто звучит приятно.</li></ul></article>
+    <article class="card"><h3>Речь и экран</h3><ul><li>Реплика завершена естественно на границе TTS-бита.</li><li>Номер, объект и единица сказаны вместе; overlay синхронен.</li><li>Нет необъяснённой аббревиатуры и обрезанного зрительского текста.</li></ul></article>
+    <article class="card"><h3>Визуал</h3><ul><li>Первый кадр понятен без звука.</li><li>Кадры меняют масштаб, доказательство или зрительский вопрос.</li><li>Есть проверка постера, середины и payoff на реальном MP4.</li></ul></article>
+    <article class="card"><h3>Технический релиз</h3><ul><li>Файл 1080×1920, H.264/AAC.</li><li>Release gate собран из фактов, package и реальных media-метаданных.</li><li>Плановый и реальный хронометраж записываются, но сами по себе не блокируют сильную историю.</li></ul></article>
+  </div>
+
+  <h2>Что не является постоянной инструкцией</h2>
+  <p class="muted">Конкретная тема, персонаж, юмористический ход, язык разовой дружеской версии, референс-фото и публикационный слот — это параметры отдельного брифа, а не вечные правила. Imagegen подключается только по прямому запросу на этот способ генерации. YouTube-публикация всегда остаётся отдельным действием по команде владельца.</p>
+</main>
+</body>
+</html>

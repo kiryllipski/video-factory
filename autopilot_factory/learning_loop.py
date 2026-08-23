@@ -170,6 +170,11 @@ def extract_levers(run_dir: Path) -> Dict[str, Any]:
             "title": title,
             "title_len": len(title) or None,
             "title_template": pkg.get("title_template") or None,
+            # Подход к описанию — рычаг с 2026-08-13 (`long_seo` → `short_context`).
+            # Длину пишем рядом с меткой: метку модель может проставить формально, длина
+            # врать не умеет.
+            "description_template": pkg.get("description_template") or None,
+            "description_len": len(pkg.get("description") or "") or None,
             "hashtags_count": len(pkg.get("hashtags") or []) or None,
             "has_pinned_comment": bool(pkg.get("pinned_comment")),
         })
@@ -177,6 +182,12 @@ def extract_levers(run_dir: Path) -> Dict[str, Any]:
     meta = _read_json(run_dir / "run_meta.json") or {}
     if meta:
         lv["pipeline_version"] = meta.get("pipeline_version")
+        # Рубрика — главный рычаг расширения тем (2026-08-14). Через 25-30 роликов по ней
+        # можно будет считать медиану подписок и лайков и решать, что расширять.
+        if meta.get("rubric"):
+            lv["rubric"] = meta["rubric"]
+        if meta.get("angle"):
+            lv["angle"] = meta["angle"]
         lv["built_at"] = meta.get("built_at")
         if meta.get("sfx_profile"):
             lv["sfx_profile"] = meta["sfx_profile"]

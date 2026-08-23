@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>v8 — варианты карточки исследования</title>
+  <style>
+    :root {
+      --navy: #163f5e;
+      --navy-deep: #0e2638;
+      --green: #4caf50;
+      --yellow: #ffdd00;
+      --cream: #f5f2e9;
+      --paper: #fffdf7;
+      --ink: #10202c;
+      --muted: #65727a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #101820; color: #f4f1e8; }
+    body {
+      padding: 34px 38px 48px;
+      font-family: Montserrat, Arial, sans-serif;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(76, 175, 80, .12), transparent 28%),
+        radial-gradient(circle at 90% 8%, rgba(255, 221, 0, .08), transparent 24%),
+        #101820;
+    }
+    header { max-width: 1420px; margin: 0 auto 28px; }
+    .eyebrow {
+      color: #b7c1c6; font: 700 12px/1.4 "IBM Plex Mono", monospace;
+      letter-spacing: .16em; text-transform: uppercase;
+    }
+    h1 { margin: 8px 0 8px; font-size: 34px; line-height: 1.08; letter-spacing: -.035em; }
+    header p { margin: 0; max-width: 900px; color: #aeb9bf; font-size: 15px; line-height: 1.5; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, 270px);
+      gap: 26px;
+      justify-content: center;
+      align-items: start;
+    }
+    .variant { width: 270px; }
+    .phone {
+      position: relative; width: 270px; height: 480px; overflow: hidden;
+      border-radius: 18px; background: #000; box-shadow: 0 22px 70px rgba(0, 0, 0, .42);
+      outline: 1px solid rgba(255, 255, 255, .13);
+    }
+    .canvas {
+      position: absolute; left: 0; top: 0; width: 1080px; height: 1920px;
+      overflow: hidden; transform: scale(.25); transform-origin: 0 0;
+      background: #111;
+    }
+    .bg { position: absolute; inset: 0; width: 1080px; height: 1920px; object-fit: cover; }
+    .grade {
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg, rgba(7, 17, 24, .06), rgba(7, 17, 24, .16));
+    }
+    .grain {
+      position: absolute; inset: 0; opacity: .08; mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+    .safe-top, .safe-bottom {
+      position: absolute; left: 72px; right: 72px; height: 1px;
+      background: rgba(255, 255, 255, .18);
+    }
+    .safe-top { top: 200px; }
+    .safe-bottom { bottom: 380px; }
+    .safe-label {
+      position: absolute; right: 78px; top: 174px; color: rgba(255,255,255,.48);
+      font: 700 17px/1 "IBM Plex Mono", monospace; letter-spacing: .1em;
+    }
+    .caption-demo {
+      position: absolute; left: 120px; right: 120px; bottom: 390px;
+      color: #fff; text-align: center; font-size: 58px; font-weight: 800; line-height: 1.1;
+      text-shadow: 0 5px 24px rgba(0,0,0,.9), 0 0 3px rgba(0,0,0,.9);
+    }
+    .caption-demo strong { color: var(--yellow); }
+    .study { position: absolute; }
+    .tag {
+      display: inline-flex; align-items: center; gap: 12px; font-size: 22px;
+      font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+    }
+    .tag::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--green); }
+    .claim { letter-spacing: -.035em; }
+    .source-title { font-family: "IBM Plex Mono", monospace; }
+    .meta { font-family: "IBM Plex Mono", monospace; letter-spacing: .04em; }
+
+    /* A — светлый editorial abstract: максимальная читаемость и знакомый язык научной публикации. */
+    .a {
+      left: 84px; right: 84px; top: 520px; padding: 44px 48px 40px;
+      color: var(--ink); background: rgba(255, 253, 247, .96);
+      border-radius: 8px; box-shadow: 0 24px 60px rgba(0, 0, 0, .32);
+    }
+    .a .tag { color: #1e5e3a; }
+    .a .claim { margin-top: 28px; font-size: 54px; font-weight: 900; line-height: 1.04; }
+    .a .rule { height: 3px; background: var(--ink); margin: 30px 0 24px; }
+    .a .source-title { font-size: 23px; line-height: 1.35; color: #334652; }
+    .a .meta { display: flex; justify-content: space-between; margin-top: 25px; font-size: 21px; color: #43555f; }
+    .a .origin { margin-top: 17px; font-size: 18px; color: #68767d; }
+
+    /* B — журнал / issue header: кадр остаётся видимым, блок ощущается частью монтажа. */
+    .b {
+      left: 62px; right: 62px; top: 562px; padding: 34px 38px 38px;
+      color: #f7f4ea; background: rgba(14, 38, 56, .91);
+      border-top: 7px solid var(--yellow); border-bottom: 1px solid rgba(255,255,255,.34);
+      box-shadow: 0 26px 70px rgba(0,0,0,.42);
+    }
+    .b .head { display: flex; justify-content: space-between; align-items: baseline; }
+    .b .journal { font-size: 24px; font-weight: 900; letter-spacing: -.02em; }
+    .b .year { color: var(--yellow); font: 700 24px/1 "IBM Plex Mono", monospace; }
+    .b .claim { margin-top: 31px; font-size: 56px; font-weight: 900; line-height: 1.03; }
+    .b .source-title { margin-top: 30px; color: #c7d4db; font-size: 21px; line-height: 1.35; }
+    .b .meta { margin-top: 24px; color: #91a9b7; font-size: 18px; text-transform: uppercase; }
+
+    /* C — evidence docket: сильнее всего показывает атрибуты, чуть меньше похож на «сайт». */
+    .c {
+      left: 76px; right: 76px; top: 500px; min-height: 610px; padding: 38px 42px 42px;
+      color: var(--ink); background: rgba(245, 242, 233, .97);
+      border: 3px solid rgba(16, 32, 44, .85); box-shadow: 18px 20px 0 rgba(22,63,94,.78);
+    }
+    .c .top { display: grid; grid-template-columns: 150px 1fr; gap: 25px; align-items: end; }
+    .c .index { font: 900 84px/.82 Montserrat, sans-serif; color: var(--navy); letter-spacing: -.08em; }
+    .c .type { font: 700 20px/1.35 "IBM Plex Mono", monospace; text-transform: uppercase; color: #4a5b64; }
+    .c .claim { margin-top: 34px; font-size: 55px; line-height: 1.05; font-weight: 900; }
+    .c .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 34px; }
+    .c .fact { padding-top: 13px; border-top: 2px solid #77858c; }
+    .c .fact b { display: block; font-size: 18px; text-transform: uppercase; letter-spacing: .1em; color: #718087; }
+    .c .fact span { display: block; margin-top: 8px; font-size: 25px; font-weight: 800; }
+    .c .source-title { margin-top: 27px; font-size: 19px; line-height: 1.4; color: #55636a; }
+
+    /* D — вывод первым: наиболее «shorts-native», но сохраняет полный источник. */
+    .d { left: 72px; right: 72px; top: 545px; color: #fff; }
+    .d .yearline { display: flex; align-items: center; gap: 22px; }
+    .d .year {
+      color: var(--yellow); font: 900 92px/.8 Montserrat, sans-serif; letter-spacing: -.07em;
+      text-shadow: 0 6px 24px rgba(0,0,0,.8);
+    }
+    .d .kind {
+      max-width: 310px; font: 700 20px/1.3 "IBM Plex Mono", monospace;
+      text-transform: uppercase; letter-spacing: .08em; text-shadow: 0 4px 18px rgba(0,0,0,.9);
+    }
+    .d .claim {
+      margin-top: 34px; padding: 34px 38px 36px; color: #fff;
+      background: rgba(14, 38, 56, .88); border-radius: 28px 6px 28px 6px;
+      font-size: 58px; line-height: 1.03; font-weight: 900;
+      box-shadow: 0 26px 70px rgba(0,0,0,.38);
+    }
+    .d .source {
+      margin-top: 20px; padding: 19px 24px; background: rgba(245,242,233,.94); color: var(--ink);
+      display: grid; grid-template-columns: 1fr auto; gap: 22px; align-items: center;
+    }
+    .d .source-title { font-size: 18px; line-height: 1.35; }
+    .d .journal { font-size: 21px; font-weight: 900; text-align: right; }
+    .d .origin { margin-top: 10px; color: #637078; font: 700 16px/1.2 "IBM Plex Mono", monospace; }
+
+    .variant h2 { margin: 16px 0 5px; font-size: 17px; line-height: 1.2; }
+    .variant p { margin: 0; color: #95a4ac; font-size: 12px; line-height: 1.45; }
+    .choice {
+      display: inline-flex; min-width: 26px; height: 26px; align-items: center; justify-content: center;
+      margin-right: 7px; border-radius: 50%; color: #101820; background: var(--yellow);
+      font: 900 13px/1 Montserrat, sans-serif;
+    }
+    footer {
+      max-width: 1420px; margin: 32px auto 0; padding-top: 20px;
+      border-top: 1px solid rgba(255,255,255,.12); color: #8898a1; font-size: 12px;
+    }
+    @media (max-width: 1220px) { .grid { grid-template-columns: repeat(2, 270px); } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">VitalLogic · v8 research overlay study</div>
+    <h1>Карточка исследования: четыре направления</h1>
+    <p>Один и тот же реальный источник на одном кадре. Тон намеренно разный: от академического
+      abstract до более нативного для Shorts вывода. Тонкие линии показывают верхнюю и нижнюю safe-зоны.</p>
+  </header>
+
+  <main class="grid">
+    <section class="variant">
+      <div class="phone"><div class="canvas">
+        <img class="bg" src="../../runs/vitallogic_v8_ru/2026-08-16_v8-myt-syruyu-kuritsu/frames/frame_03.png" alt="">
+        <div class="grade"></div><div class="grain"></div><div class="safe-top"></div><div class="safe-bottom"></div><div class="safe-label">SAFE AREA</div>
+        <article class="study a">
+          <div class="tag">Исследование</div>
+          <div class="claim">Струя воды разносит микрокапли с поверхности курицы</div>
+          <div class="rule"></div>
+          <div class="source-title">“Chickensplash! Exploring the health concerns of washing raw chicken”</div>
+          <div class="meta"><span>Physics of Fluids</span><span>2022</span></div>
+          <div class="origin">Первичное исследование · источник: NCBI / PMC8948954</div>
+        </article>
+        <div class="caption-demo">работает как <strong>пульверизатор</strong></div>
+      </div></div>
+      <h2><span class="choice">A</span>Editorial abstract</h2>
+      <p>Самый читаемый и «бумажный». Сильнее всего повышает ощущение доказательности, но заметно закрывает кадр.</p>
+    </section>
+
+    <section class="variant">
+      <div class="phone"><div class="canvas">
+        <img class="bg" src="../../runs/vitallogic_v8_ru/2026-08-16_v8-myt-syruyu-kuritsu/frames/frame_03.png" alt="">
+        <div class="grade"></div><div class="grain"></div><div class="safe-top"></div><div class="safe-bottom"></div><div class="safe-label">SAFE AREA</div>
+        <article class="study b">
+          <div class="head"><span class="journal">PHYSICS OF FLUIDS</span><span class="year">2022</span></div>
+          <div class="claim">Струя воды разносит микрокапли с поверхности курицы</div>
+          <div class="source-title">Chickensplash! Exploring the health concerns of washing raw chicken</div>
+          <div class="meta">Primary study · NCBI PMC8948954</div>
+        </article>
+        <div class="caption-demo">работает как <strong>пульверизатор</strong></div>
+      </div></div>
+      <h2><span class="choice">B</span>Journal issue</h2>
+      <p>Журнальная шапка и тёмная полупрозрачная плоскость. Хороший баланс авторитетности и сохранения изображения.</p>
+    </section>
+
+    <section class="variant">
+      <div class="phone"><div class="canvas">
+        <img class="bg" src="../../runs/vitallogic_v8_ru/2026-08-16_v8-myt-syruyu-kuritsu/frames/frame_03.png" alt="">
+        <div class="grade"></div><div class="grain"></div><div class="safe-top"></div><div class="safe-bottom"></div><div class="safe-label">SAFE AREA</div>
+        <article class="study c">
+          <div class="top"><div class="index">01</div><div class="type">Evidence dossier<br>primary study</div></div>
+          <div class="claim">Струя воды разносит микрокапли с поверхности курицы</div>
+          <div class="facts">
+            <div class="fact"><b>Журнал</b><span>Physics of Fluids</span></div>
+            <div class="fact"><b>Год</b><span>2022</span></div>
+          </div>
+          <div class="source-title">Chickensplash! Exploring the health concerns of washing raw chicken · NCBI PMC8948954</div>
+        </article>
+        <div class="caption-demo">работает как <strong>пульверизатор</strong></div>
+      </div></div>
+      <h2><span class="choice">C</span>Evidence dossier</h2>
+      <p>Лучше всего показывает атрибуты и допускает серийную нумерацию источников. Самый «редакционный», но и самый тяжёлый.</p>
+    </section>
+
+    <section class="variant">
+      <div class="phone"><div class="canvas">
+        <img class="bg" src="../../runs/vitallogic_v8_ru/2026-08-16_v8-myt-syruyu-kuritsu/frames/frame_03.png" alt="">
+        <div class="grade"></div><div class="grain"></div><div class="safe-top"></div><div class="safe-bottom"></div><div class="safe-label">SAFE AREA</div>
+        <article class="study d">
+          <div class="yearline"><span class="year">2022</span><span class="kind">первичное исследование гидродинамики</span></div>
+          <div class="claim">Струя воды разносит микрокапли с поверхности курицы</div>
+          <div class="source">
+            <div><div class="source-title">Chickensplash! Exploring the health concerns of washing raw chicken</div><div class="origin">NCBI · PMC8948954</div></div>
+            <div class="journal">Physics<br>of Fluids</div>
+          </div>
+        </article>
+        <div class="caption-demo">работает как <strong>пульверизатор</strong></div>
+      </div></div>
+      <h2><span class="choice">D</span>Claim first</h2>
+      <p>Наиболее нативный для Shorts: сначала вывод, затем источник. Хорошо считывается, но выглядит менее академично, чем A/C.</p>
+    </section>
+  </main>
+  <footer>Превью для выбора направления. В пайплайн пока не зафиксирован ни один вариант.</footer>
+</body>
+</html>
