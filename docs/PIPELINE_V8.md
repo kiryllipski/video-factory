@@ -1,22 +1,24 @@
-# Pipeline v8 alpha3 — Gemini-first evidence workflow
+# Pipeline v8 — canonical Codex evidence workflow
 
-Статус: рабочая русскоязычная оценочная версия рядом с v7. Production v7 не заменён.
-Публикация отключена (`publication_authorized=false`).
+Статус: активный канонический контур для Codex-производства VitalLogic. Legacy v1–v7
+сохраняются в архиве и не являются маршрутом новых роликов. Публикация отключена
+(`publication_authorized=false`) до отдельной прямой команды владельца.
 
-## Что изменено относительно v7
+## Контур v8
 
-1. До сценария Gemini Pro с Google Search создаёт grounded research memo.
-2. Отдельный Gemini-проход нормализует его в `ResearchPack`: источники, `claim_id`,
+1. Codex сначала собирает grounded research memo из актуальных первичных/официальных
+   источников и принимает редакционное решение по теме, формату и ироничному конфликту.
+2. `ResearchPack` фиксирует источники, `claim_id`,
    разрешённые формулировки, ограничения и rejected-claims.
 3. Сценарий обязан привязать факты и числа к `claim_id`. Rejected-claim блокирует run.
-4. Compliance, fact-check и смысловой QA выполняются отдельными Gemini-вызовами.
+4. Compliance, fact-check и смысловой QA выполняются отдельными проверяемыми стадиями;
+   Gemini может быть инструментом проверки, но не владельцем редакционного решения.
 5. После каждой content revision все зависимые проверки выполняются заново.
 6. Publish package создаётся только для окончательно принятой версии и содержит URL из
    ResearchPack.
-7. Медиа запускается только после pre-media release gate. Стабильный слой v7 сохранён:
-   Nano Banana 2, Gemini TTS (`gemini-3.1-flash-tts-preview` через локальный `audio_agent`),
-   HyperFrames, субтитры, safe zones, BGM и loudness. Другой TTS-движок не подменяет Gemini
-   без прямого указания владельца.
+7. Медиа запускается только после pre-media release gate. Кадры делает встроенный Codex
+   `imagegen`; Gemini TTS (`gemini-3.1-flash-tts-preview` через локальный `audio_agent`),
+   HyperFrames, субтитры, safe zones, BGM и loudness остаются допустимыми локальными слоями.
 8. Кадровый контракт v8: один смысловой бит → один исходный кадр. Post-TTS дробления по
    трём секундам нет.
 9. Poster живёт только до первой фактической смены изображения. Кириллический safe-fit
@@ -74,30 +76,36 @@ python3 engine_v8.py \
   --slug short-slug
 ```
 
-Сборка уже принятого content package:
+Сборка уже принятого content package с проверенными кадрами ImageGen:
 
 ```bash
-VITALLOGIC_TTS_VOICE=Charon \\
-python3 engine_v8.py --build runs/vitallogic_v8_ru/<run-dir>
+VITALLOGIC_TTS_VOICE=Charon \
+python3 engine_v8.py --build runs/vitallogic_bad_pl/<run-dir> \
+  --asset-channel vitallogic_bad_pl
 ```
 
-Полный прогон одним вызовом возможен через `--go`, но для оценочных партий рекомендуется
-сначала просмотреть `research_pack.json`, `script.json`, `fact_review.json`, `qa.json` и
-`release_gate.json`.
+Перед `--build` в папке прогона обязателен `media_manifest.json`: он содержит порядок,
+пути, SHA-256, provenance встроенного ImageGen и отметку визуального одобрения каждого
+кадра. `engine_v8.py` сверяет manifest с `frame_plan.json` и никогда не вызывает скрытый
+Gemini image path. `--go` для Codex-authored пакетов не используется.
 
 Тесты:
 
 ```bash
 PYTHONPATH=autopilot_factory:orchestration \
   python3 -m unittest -v autopilot_factory/test_engine_v8.py
+PYTHONPATH=autopilot_factory:orchestration \
+  python3 -m unittest -v autopilot_factory/test_engine_v8_media_manifest.py \
+  autopilot_factory/test_assembly_v8_typography.py
 ```
 
-## Что сознательно не включено
+## Что сознательно не включено в автоматизацию
 
 - post-TTS нарезка кадров при превышении трёх секунд;
 - OCR каждого исходного и финального кадра;
 - обязательный `not_a_clone` gate и генерация 3–5 hook-вариантов;
-- новое позиционирование канала, актовая озвучка/ASR и живой польский голос;
+- автоматическая публикация и изменение YouTube-состояния;
+- подмена Codex редактора Gemini-генерацией сценария при media build;
 - фирменный стеклянный «рентген»-гибрид.
 
 Эти пункты остаются отдельными экспериментами, а не частью обязательного v8-контракта.
@@ -108,16 +116,16 @@ PYTHONPATH=autopilot_factory:orchestration \
 `A Editorial abstract`, `B Journal issue`, `C Evidence dossier`, `D Claim first`.
 Превью: `autopilot_factory/previews/v8_research_cards/index.html`.
 
-Кирилл выбрал `A Editorial abstract` 2026-08-16. Alpha3 внедряет его в v8, но оставляет
-legacy-строку для v7-объектов без ResearchPack, чтобы старые пересборки не менялись молча.
+Кирилл выбрал `A Editorial abstract` 2026-08-16. Канонический v8 использует этот слой;
+старые объекты остаются в архиве и не меняются молча.
 
-## Известные ограничения alpha3
+## Известные ограничения
 
-- Pixel QA v7 не понимает намеренное загрязнение/увядание и может зря перегенерировать
+- Pixel QA legacy не понимает намеренное загрязнение/увядание и может зря перегенерировать
   доказательный кадр. Нужен claim-aware контекст исключений.
 - Layout-inspect надёжно ловит выход текста за canvas, но смысловую перегруженность по-прежнему
   должен остановить upstream gate; технически помещающийся длинный `versus` всё равно плох.
 - Image API сохраняет JPEG-байты с расширением `.png`; браузер их читает, но некоторые
   внешние утилиты ориентируются на расширение и требуют предварительной конвертации.
-- `gemini-3.1-pro-preview` отклоняет часть вложенных Pydantic response schemas, поэтому v8
-  использует Gemini JSON mode + локальную строгую Pydantic-валидацию.
+- Текстовый CLI `engine_v8.py` сохранён как совместимый вспомогательный путь для старых
+  оценочных артефактов; активное Codex-производство пишет package напрямую по skill contract.

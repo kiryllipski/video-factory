@@ -113,6 +113,36 @@ def metadata_errors(
     return errors
 
 
+def structure_errors(strategy: dict) -> list[str]:
+    """Require an auditable structural comparison, not just a new topic label."""
+    errors: list[str] = []
+    variation = strategy.get("structure_variation")
+    if not isinstance(variation, dict):
+        return ["codex_strategy.json requires a structure_variation object"]
+    compared = variation.get("compared_runs")
+    if not isinstance(compared, list) or len(compared) < 8:
+        errors.append("structure_variation.compared_runs must contain at least 8 runs")
+    signature = variation.get("signature")
+    required = (
+        "hook_mechanism", "first_proof", "turn_device", "evidence_device",
+        "overlay_sequence", "payoff_device", "visual_rhythm",
+    )
+    if not isinstance(signature, dict):
+        errors.append("structure_variation.signature must be an object")
+    else:
+        for field in required:
+            value = signature.get(field)
+            if field == "overlay_sequence":
+                if not isinstance(value, list) or not value:
+                    errors.append("structure_variation.signature.overlay_sequence must be non-empty")
+            elif not str(value or "").strip():
+                errors.append(f"structure_variation.signature.{field} is required")
+    differences = variation.get("differs_from_recent")
+    if not isinstance(differences, list) or len(differences) < 3:
+        errors.append("structure_variation.differs_from_recent must list at least 3 differences")
+    return errors
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: check_package.py <run-dir>", file=sys.stderr)
@@ -148,6 +178,7 @@ def main() -> int:
     errors = []
     if strategy.get("authored_by") != "Codex":
         errors.append("codex_strategy.json must contain authored_by=Codex")
+    errors.extend(structure_errors(strategy))
     if values["script"].lang != "pl" or values["research"].lang != "pl":
         errors.append("this skill expects a Polish package")
     if not values["compliance"].passed or values["compliance"].cleaned_script != values["script"]:
@@ -170,9 +201,9 @@ def main() -> int:
         expected_format = values["script"].format
         if selected_format != expected_format:
             errors.append("format_selection.format must match script.format")
-        if selected_format not in S.V7.FORMAT_BRIEFS:
+        if selected_format not in S.FORMAT_BRIEFS:
             errors.append("format_selection.format is not in the canonical format catalog")
-        expected_priority = S.V7.FORMAT_PRIORITY.get(selected_format)
+        expected_priority = S.FORMAT_PRIORITY.get(selected_format)
         if format_selection.get("priority") != expected_priority:
             errors.append("format_selection.priority does not match the format catalog")
         for field in ("reason", "comic_engine"):
@@ -181,7 +212,7 @@ def main() -> int:
         discarded = format_selection.get("discarded_alternatives", [])
         if not isinstance(discarded, list):
             errors.append("format_selection.discarded_alternatives must be a list")
-        elif any(item not in S.V7.FORMAT_BRIEFS for item in discarded):
+        elif any(item not in S.FORMAT_BRIEFS for item in discarded):
             errors.append("format_selection.discarded_alternatives contains an unknown format")
 
     allowed_urls = {source.url for source in values["research"].sources}

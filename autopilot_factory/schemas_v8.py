@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Контракты v8: доказательная база поверх стабильного media layer v7."""
+"""Canonical v8 contracts for evidence, editorial structure and media assembly."""
 from __future__ import annotations
 
 from typing import List, Literal
 
 from pydantic import BaseModel, Field
 
-import schemas_v7 as V7
+import schemas_v8_base as V8Base
 
 
-PIPELINE_VERSION = "8.0-alpha4"
+PIPELINE_VERSION = "8.0"
 
 SourceType = Literal[
     "official_guideline",
@@ -59,11 +59,11 @@ class ResearchPack(BaseModel):
     unresolved_conflicts: List[str] = Field(default_factory=list, max_length=6)
 
 
-class Beat(V7.Beat):
+class Beat(V8Base.Beat):
     claim_ids: List[str] = Field(default_factory=list, max_length=4)
 
 
-class Overlay(V7.Overlay):
+class Overlay(V8Base.Overlay):
     claim_ids: List[str] = Field(default_factory=list, max_length=4)
     source_finding: str = Field(
         "", max_length=100,
@@ -74,7 +74,7 @@ class Overlay(V7.Overlay):
     )
 
 
-class Script(V7.Script):
+class Script(V8Base.Script):
     lang: Literal["pl", "ru"] = "pl"
     beats: List[Beat] = Field(..., min_length=8, max_length=18)
     overlays: List[Overlay] = Field(default_factory=list, min_length=3, max_length=6)
@@ -104,15 +104,15 @@ class FactReview(BaseModel):
     notes: List[str] = Field(default_factory=list, max_length=8)
 
 
-class Frame(V7.Frame):
+class Frame(V8Base.Frame):
     claim_ids: List[str] = Field(default_factory=list, max_length=4)
 
 
-class FramePlan(V7.FramePlan):
+class FramePlan(V8Base.FramePlan):
     frames: List[Frame] = Field(..., min_length=8, max_length=18)
 
 
-class PublishPackage(V7.PublishPackage):
+class PublishPackage(V8Base.PublishPackage):
     description: str = Field(..., max_length=5000)
     distribution_lane: Literal["feed", "search", "hybrid"] = Field(
         "feed", description="Primary discovery lane used for the metadata hypothesis"
@@ -143,8 +143,20 @@ class ReleaseReport(BaseModel):
     content_revision: str
 
 
-QAReport = V7.QAReport
-QACheck = V7.QACheck
+QAReport = V8Base.QAReport
+QACheck = V8Base.QACheck
+
+# The catalog is part of the v8 public contract.  Re-exporting it here keeps callers
+# from reaching through an implementation module and makes the skill/checker v8-only.
+Rubric = V8Base.Rubric
+Format = V8Base.Format
+CANONICAL_FORMATS = V8Base.CANONICAL_FORMATS
+FORMAT_PRIORITY = V8Base.FORMAT_PRIORITY
+FORMAT_BRIEFS = V8Base.FORMAT_BRIEFS
+RUBRIC_META = V8Base.RUBRIC_META
+ACTIVE_RUBRICS = V8Base.ACTIVE_RUBRICS
+COMPLIANCE_STOPWORDS = V8Base.COMPLIANCE_STOPWORDS
+rubric_formats = V8Base.rubric_formats
 
 
 __all__ = [
@@ -165,4 +177,13 @@ __all__ = [
     "ReleaseReport",
     "QAReport",
     "QACheck",
+    "Rubric",
+    "Format",
+    "CANONICAL_FORMATS",
+    "FORMAT_PRIORITY",
+    "FORMAT_BRIEFS",
+    "RUBRIC_META",
+    "ACTIVE_RUBRICS",
+    "COMPLIANCE_STOPWORDS",
+    "rubric_formats",
 ]

@@ -165,5 +165,5 @@
 ## 6. Что дальше
 
 Медиаплан, построенный на этом срезе, —
-[channels/vitallogic_bad_pl/media_plan_v7.md](../../autopilot_factory/channels/vitallogic_bad_pl/media_plan_v7.md).
+[channels/vitallogic_bad_pl/media_plan_v8.md](../../autopilot_factory/channels/vitallogic_bad_pl/media_plan_v8.md).
 При обновлении файла обновлять и его: план ссылается на кластеры отсюда.

@@ -449,18 +449,21 @@ def _parse_json_array(raw: str):
 def _load_channel_ctx(channel: str) -> str:
     """Короткий контекст канала: редакционная политика + производственные рубрики.
 
-    Канонический scope хранится в `editorial_policy.md`; v7-контекст добавляется как
+    Канонический scope хранится в `editorial_policy.md`; v8-контекст добавляется как
     производственный слой. Старый `studio_context.md` намеренно не используется: там
-    рубрики v1-v6 (Objaw→Błąd / Zła Para / Mit), от которых пайплайн ушёл ещё в v7."""
+    рубрики v1-v6 (Objaw→Błąd / Zła Para / Mit), от которых пайплайн ушёл ещё в v8."""
     base = _PROJECT_ROOT / "autopilot_factory" / "channels" / channel
-    paths = [base / "editorial_policy.md", base / "studio_context_v7.md"]
+    context = base / "studio_context_v8_pl.md"
+    if not context.exists():
+        context = base / "studio_context_v8_ru.md"
+    paths = [base / "editorial_policy.md", context]
     existing = [p for p in paths if p.exists()]
     if not existing:
         return f"(канал '{channel}' без studio_context.md)"
     chunks = []
     for p in existing:
         text = p.read_text(encoding="utf-8")
-        # Для v7 берём начало до визуала/TTS; policy читаем целиком, поскольку там scope.
+        # Для v8 берём начало до визуала/TTS; policy читаем целиком, поскольку там scope.
         if p.name != "editorial_policy.md":
             text = re.split(r"\n##\s+(?:[4-9]|1[0-9])\.", text)[0]
             text = text[:2200]

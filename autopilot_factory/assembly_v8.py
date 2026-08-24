@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-assembly_v7.py — сборка ролика v7. Отличия от `assembly.py` (v1-v6) — по порядку важности:
+assembly_v8.py — сборка ролика v8. Отличия от `assembly.py` (v1-v6) — по порядку важности:
 
 1. **Слой информационной графики.** Семь видов оверлеев (stat/bar/versus/list/callout/stamp/
    timeline) рендерятся детерминированно в CSS+GSAP поверх кадра. Раньше в сборке жили ровно
@@ -12,7 +12,7 @@ assembly_v7.py — сборка ролика v7. Отличия от `assembly.p
    на −21дБ и ни одного акцента (аудит §2.4).
 
 3. **Кадр покрывает диапазон битов**, а не один бит — но не дольше 3с (гейт
-   `engine_v7.MAX_FRAME_S`, 2026-08-13). Толчок масштаба стоит только на смене изображения;
+   `engine_v8_base.MAX_FRAME_S`, 2026-08-13). Толчок масштаба стоит только на смене изображения;
    внутри одного изображения визуальных толчков нет — они читались как пульсация.
 
 4. **Payoff-карточка** вместо финального фото с вопросом: вывод ролика крупным текстом на
@@ -113,7 +113,7 @@ def _motion_tween(sel: str, motion: str, start: float, dur: float) -> str:
         "pan_left":      f'tl.fromTo("{sel}",{{scale:1.10,xPercent:3}},{{xPercent:-3,duration:{dur},ease:"none"}},{start});',
         "pan_right":     f'tl.fromTo("{sel}",{{scale:1.10,xPercent:-3}},{{xPercent:3,duration:{dur},ease:"none"}},{start});',
         "parallax":      f'tl.fromTo("{sel}",{{scale:1.08,yPercent:2}},{{yPercent:-2,duration:{dur},ease:"none"}},{start});',
-        # v7: punch_hold — кадр «дышит» медленно, чтобы не спорить с графикой поверх него
+        # v8: punch_hold — кадр «дышит» медленно, чтобы не спорить с графикой поверх него
         "punch_hold":    f'tl.fromTo("{sel}",{{scale:1.04}},{{scale:1.08,duration:{dur},ease:"none"}},{start});',
         "hook_punch":    (f'tl.fromTo("{sel}",{{scale:1.18}},{{scale:1.06,duration:{punch:.3f},ease:"power3.out"}},{start});'
                           f'tl.to("{sel}",{{scale:1.12,duration:{max(dur - punch, 0.1):.3f},ease:"none"}},{start + punch:.3f});'),
@@ -122,13 +122,13 @@ def _motion_tween(sel: str, motion: str, start: float, dur: float) -> str:
 
 
 def _frame_clips(frame_spans, motions, beat_starts, beat_durs, total):
-    """Кадр покрывает диапазон битов (v7). Возвращает клипы и твины движения.
+    """Кадр покрывает диапазон битов (v8). Возвращает клипы и твины движения.
 
     Толчок масштаба ставится РОВНО на смену изображения и больше нигде (правило владельца
-    2026-08-13). Внутри одного изображения визуальных толчков нет: в первой партии v7 толчок
+    2026-08-13). Внутри одного изображения визуальных толчков нет: в первой партии v8 толчок
     на каждой границе бита читался как регулярная пульсация картинки. Плотность внутри
     кадра теперь держат графика и субтитры, а сама картинка меняется чаще — гейт
-    `engine_v7.MAX_FRAME_S` не даёт ей висеть дольше 3с."""
+    `engine_v8_base.MAX_FRAME_S` не даёт ей висеть дольше 3с."""
     clips, tweens = [], []
     # Границы кадров — по округлённым значениям, длительность = разница соседних границ.
     # Независимое округление start и duration давало наложение соседних клипов в 1 мс
@@ -184,9 +184,14 @@ def _norm(s: str) -> str:
     return "".join(ch for ch in s.lower() if ch.isalnum())
 
 
+def _word_safe_html(text: str) -> str:
+    """Wrap fallback caption words so the browser cannot split a word across lines."""
+    return " ".join(f'<span class="word">{escape(word)}</span>' for word in text.split())
+
+
 def _caption_clips(beat_words, fallback_captions, beat_starts, beat_durs,
                    emphases: list[str], max_words: int = 3, max_chars: int = 24):
-    """Караоке-субтитры. v7: слово из `Beat.emphasis` получает не только подсветку, но и
+    """Караоке-субтитры. v8: слово из `Beat.emphasis` получает не только подсветку, но и
     увеличенный кегль — ударное слово должно быть видно как ударное, а не как соседнее."""
     clips, tweens = [], []
     cap_idx = 0
@@ -214,7 +219,8 @@ def _caption_clips(beat_words, fallback_captions, beat_starts, beat_durs,
                                   f'ease:"power1.out"}},{cs + we:.3f});')
                 clips.append(
                     f'<div id="cap{cap_idx}" class="clip cap" data-start="{cs:.3f}" '
-                    f'data-duration="{cd:.3f}" data-track-index="8">{" ".join(spans)}</div>'
+                    f'data-duration="{cd:.3f}" data-track-index="8" data-fit-min="28" '
+                    f'data-fit-height="164" data-word-safe-fit="true">{" ".join(spans)}</div>'
                 )
                 tweens.append(f'tl.from("#cap{cap_idx}",{{opacity:0,y:22,duration:0.2,'
                               f'ease:"power2.out"}},{cs:.3f});')
@@ -227,7 +233,8 @@ def _caption_clips(beat_words, fallback_captions, beat_starts, beat_durs,
                 prev_end = cs + cd
                 clips.append(
                     f'<div id="cap{cap_idx}" class="clip cap" data-start="{cs:.3f}" '
-                    f'data-duration="{cd:.3f}" data-track-index="8">{cap}</div>'
+                    f'data-duration="{cd:.3f}" data-track-index="8" data-fit-min="28" '
+                    f'data-fit-height="164" data-word-safe-fit="true">{_word_safe_html(cap)}</div>'
                 )
                 tweens.append(f'tl.from("#cap{cap_idx}",{{opacity:0,y:22,duration:0.25,'
                               f'ease:"power2.out"}},{cs:.3f});')
@@ -318,7 +325,7 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats, source_cards=None)
             pct = ov.percent if ov.percent is not None else 0
             label = _accent_html(ov.label) if ov.label else ""
             value_only = " value-only" if not ov.label else ""
-            body = (f'<div class="barlab{value_only}">{label}'
+            body = (f'<div class="barlab{value_only}" data-fit-min="24" data-word-safe-fit="true">{label}'
                     f'<span class="barval">{escape(ov.value or f"{pct}%")}</span></div>'
                     f'<div class="bartrack"><div id="{oid}_f" class="barfill"></div></div>')
             tweens.append(f'tl.fromTo("#{oid}_f",{{width:"0%"}},{{width:"{pct}%",duration:0.65,'
@@ -330,13 +337,13 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats, source_cards=None)
             wa = "win" if ov.winner == "a" else ("lose" if ov.winner == "b" else "")
             wb = "win" if ov.winner == "b" else ("lose" if ov.winner == "a" else "")
             body = (f'<div class="vs">'
-                    f'<div class="vscol {wa}"><div class="vsval" data-fit-min="42">'
+                    f'<div class="vscol {wa}"><div class="vsval" data-fit-min="42" data-word-safe-fit="true">'
                     f'{escape(ov.value)}</div>'
-                    f'<div class="vslab">{escape(ov.label)}</div></div>'
+                    f'<div class="vslab" data-fit-min="22" data-word-safe-fit="true">{escape(ov.label)}</div></div>'
                     f'<div class="vsmid">vs</div>'
-                    f'<div class="vscol {wb}"><div class="vsval" data-fit-min="42">'
+                    f'<div class="vscol {wb}"><div class="vsval" data-fit-min="42" data-word-safe-fit="true">'
                     f'{escape(ov.value_b)}</div>'
-                    f'<div class="vslab">{escape(ov.label_b)}</div></div></div>')
+                    f'<div class="vslab" data-fit-min="22" data-word-safe-fit="true">{escape(ov.label_b)}</div></div></div>')
         elif kind == "list":
             rows = []
             for j, it in enumerate(ov.items[:4]):
@@ -346,24 +353,24 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats, source_cards=None)
                 elif it.startswith("-"):
                     mark, txt = "✕", it[1:].strip()
                 cls = "ok" if mark == "✓" else ("no" if mark == "✕" else "")
-                rows.append(f'<div id="{oid}_r{j}" class="lrow {cls}">'
+                rows.append(f'<div id="{oid}_r{j}" class="lrow {cls}" data-fit-min="24" data-word-safe-fit="true">'
                             f'<span class="lmark">{mark}</span>{escape(txt)}</div>')
                 tweens.append(f'tl.from("#{oid}_r{j}",{{opacity:0,x:-28,duration:0.22,'
                               f'ease:"power2.out"}},{start + 0.12 + j * 0.22:.3f});')
-            head = f'<div class="lhead">{_accent_html(ov.label)}</div>' if ov.label else ""
+            head = f'<div class="lhead" data-fit-min="24" data-word-safe-fit="true">{_accent_html(ov.label)}</div>' if ov.label else ""
             body = head + "".join(rows)
         elif kind == "callout":
             # Если Gemini дал и объясняющую подпись, и компактное значение, показываем
             # значение. Подпись почти всегда дублирует субтитр (например, «уничтожает
             # патогены» рядом с «74°C») и превращает кадр в две конкурирующие реплики.
-            body = (f'<div class="cotext" data-fit-min="42">'
+            body = (f'<div class="cotext" data-fit-min="42" data-word-safe-fit="true">'
                     f'{_accent_html(ov.value or ov.label)}</div>')
         elif kind == "stamp":
             # Кегль от длины: «NIE» и «MIEJSCE 3» — разной ширины, фиксированные 112px
             # обрезали длинный вариант об правый край (поймано на прогоне 2026-08-12).
             txt = (ov.value or ov.label).strip()
             sfs = 112 if len(txt) <= 5 else (88 if len(txt) <= 9 else 68)
-            body = f'<div class="stamptext" style="font-size:{sfs}px">{escape(txt)}</div>'
+            body = f'<div class="stamptext" style="font-size:{sfs}px" data-fit-min="42" data-word-safe-fit="true">{escape(txt)}</div>'
             tweens.append(f'tl.set("#{oid}",{{opacity:0}},0);'
                           f'tl.fromTo("#{oid}",{{scale:2.1,opacity:0,rotation:-14}},'
                           f'{{scale:1,opacity:1,rotation:-9,duration:0.26,ease:"power4.out"}},'
@@ -386,17 +393,17 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats, source_cards=None)
                     f'<article id="{oid}_card" class="source-card">'
                     f'{source_tag}'
                     f'<div id="{oid}_finding" class="source-finding" data-fit-min="38" '
-                    f'data-fit-height="132">{escape(finding)}</div>'
+                    f'data-fit-height="132" data-word-safe-fit="true">{escape(finding)}</div>'
                     f'<div id="{oid}_rule" class="source-rule"></div>'
                     f'<div id="{oid}_details" class="source-details">'
-                    f'<div class="source-title" data-fit-min="18" data-fit-height="64">'
+                    f'<div class="source-title" data-fit-min="18" data-fit-height="64" data-word-safe-fit="true">'
                     f'{escape(title)}</div>'
                     f'<div class="source-meta">{escape(publisher)} · {escape(year)}</div>'
                     f'<div class="source-reference">{escape(reference)}</div>'
                     f'</div></article>'
                 )
             else:
-                body = f'<div class="srctext">{escape(ov.label or ov.value)}</div>'
+                body = f'<div class="srctext" data-fit-min="20" data-word-safe-fit="true">{escape(ov.label or ov.value)}</div>'
         elif kind == "timeline":
             n = max(len(ov.items), 1)
             marks = []
@@ -404,10 +411,10 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats, source_cards=None)
                 left = (j / max(n - 1, 1)) * 100 if n > 1 else 50
                 marks.append(f'<div id="{oid}_m{j}" class="tlmark" style="left:{left:.1f}%">'
                              f'<span class="tldot"></span>'
-                             f'<span class="tllab">{escape(it)}</span></div>')
+                             f'<span class="tllab" data-fit-min="20" data-word-safe-fit="true">{escape(it)}</span></div>')
                 tweens.append(f'tl.from("#{oid}_m{j}",{{opacity:0,scale:0.5,duration:0.2,'
                               f'ease:"back.out(2)"}},{start + 0.12 + j * 0.24:.3f});')
-            head = f'<div class="lhead">{_accent_html(ov.label)}</div>' if ov.label else ""
+            head = f'<div class="lhead" data-fit-min="24" data-word-safe-fit="true">{_accent_html(ov.label)}</div>' if ov.label else ""
             body = head + f'<div class="tlwrap"><div class="tlline"></div>{"".join(marks)}</div>'
 
         card_class = " source-card-mode" if source_card else ""
@@ -475,7 +482,7 @@ def _headline_clip(text: str, dur: float):
     clips = [f'<div id="hscrim" class="clip scrim" data-start="0.000" data-duration="{dur:.3f}" '
              f'data-track-index="3"></div>',
              f'<div id="headline" class="clip headline" style="font-size:{fs}px" '
-             f'data-fit-min="72" data-fit-height="520" data-start="0.000" '
+             f'data-fit-min="72" data-fit-height="520" data-word-safe-fit="true" data-start="0.000" '
              f'data-duration="{dur:.3f}" data-track-index="4">{_accent_html(text.strip())}</div>']
     tweens = [f'tl.to("#headline",{{opacity:0,duration:{fade:.3f},ease:"power1.in"}},{dur - fade:.3f});',
               f'tl.set("#headline",{{opacity:0}},{dur:.3f});',
@@ -485,7 +492,7 @@ def _headline_clip(text: str, dur: float):
 
 
 def _headline_duration(beat_durs, frame_spans, until_first_cut: bool) -> float:
-    """Длительность постера: legacy v7 либо ровно до первой смены изображения."""
+    """Длительность постера: legacy v8 либо ровно до первой смены изображения."""
     if not beat_durs:
         return 0.0
     if until_first_cut and frame_spans:
@@ -498,7 +505,7 @@ def _headline_duration(beat_durs, frame_spans, until_first_cut: bool) -> float:
 
 
 def _payoff_clip(text: str, start: float, total: float, frame_asset: str = "assets/frame0.png"):
-    """v7: финальная карточка с ВЫВОДОМ (не с вопросом) — кадр, ради которого ролик сохраняют.
+    """v8: финальная карточка с ВЫВОДОМ (не с вопросом) — кадр, ради которого ролик сохраняют.
 
     Правка владельца 2026-08-12: под текстом лежит КАДР. Раньше карточка была глухой
     бренд-плашкой, и финал висел в пустоте. Узнаваемый кадр закрывает визуальную петлю
@@ -524,7 +531,7 @@ def _payoff_clip(text: str, start: float, total: float, frame_asset: str = "asse
         f'data-duration="{dur:.3f}" data-track-index="10"></div>',
         f'<div id="potext" class="clip potext{payoff_layout}" data-start="{start:.3f}" '
         f'data-duration="{dur:.3f}" data-track-index="11">'
-        f'<div class="poinner" style="font-size:{fs}px" data-fit-min="58">'
+        f'<div class="poinner" style="font-size:{fs}px" data-fit-min="58" data-word-safe-fit="true">'
         f'{_accent_html(text.strip())}</div></div>']
     # `tl.from` оставляет элемент видимым в DOM до инициализации твина: при перемотке
     # полноэкранная карточка накрывала кадры ДО своего окна (линтер:
@@ -566,9 +573,10 @@ background:radial-gradient(120% 78% at 50% 42%,rgba(0,0,0,0) 44%,rgba(4,8,14,.52
 .has-source-card .vig{{opacity:.72}}
 
 /* субтитры: safe-зона снизу {SAFE_BOTTOM}px */
-.cap{{position:absolute;left:{SAFE_SIDE}px;right:{SAFE_SIDE}px;bottom:{SAFE_BOTTOM}px;text-align:center;
+.cap{{position:absolute;left:{SAFE_SIDE}px;right:{SAFE_SIDE}px;bottom:{SAFE_BOTTOM}px;max-height:164px;text-align:center;
 color:#fff;font-size:67px;font-weight:800;line-height:1.14;letter-spacing:-0.5px;
 text-shadow:0 4px 24px rgba(0,0,0,.85),0 0 2px rgba(0,0,0,.9)}}
+[data-word-safe-fit]{{overflow-wrap:normal!important;word-break:normal!important;hyphens:none!important}}
 .word{{display:inline-block;margin-right:.34em}}
 /* transform:scale ударного слова не занимает места в потоке и наезжает на соседнее —
    компенсируем боковыми полями (поймано на прогоне 2026-08-12: «problemyżołądkowe») */
@@ -677,7 +685,7 @@ background:rgba(255,255,255,.32);box-shadow:0 1px 6px rgba(0,0,0,.5)}}
 margin:20px auto 0;box-shadow:0 2px 10px rgba(0,0,0,.55),0 0 0 6px rgba(255,255,255,.16)}}
 .tllab{{display:block;margin-top:14px;font-size:34px;font-weight:700;line-height:1.15}}
 
-/* Legacy v7 source: старые сборки без ResearchPack остаются компактными. */
+/* Legacy v8 source: старые сборки без ResearchPack остаются компактными. */
 .ov-source{{top:1225px}}
 /* Атрибуция — самый тихий элемент слоя, но «тихий» не значит «невидимый». На светлом
    кадре белое с прозрачностью .62 и без подложки исчезало полностью (замер на ролике
@@ -699,7 +707,7 @@ font-weight:800;letter-spacing:2.1px;text-transform:uppercase;line-height:1.1}}
 box-shadow:0 0 0 5px rgba(75,155,104,.13)}}
 .source-finding{{margin-top:20px;width:100%;max-height:132px;overflow:hidden;color:{INK};
 font-size:54px;font-weight:900;line-height:1.15;letter-spacing:-1.25px;
-overflow-wrap:break-word}}
+overflow-wrap:normal;word-break:normal;hyphens:none}}
 .source-rule{{height:3px;margin:26px 0 22px;background:#397B54;transform-origin:0 50%;
 will-change:transform}}
 .source-details{{color:#25313B}}
@@ -723,7 +731,7 @@ rgba(0,0,0,.80) 100%)}}
 display:flex;align-items:center;justify-content:center}}
 .potext.payoff-top{{top:80px;bottom:auto;height:300px}}
 .poinner{{width:100%;text-align:center;color:#fff;font-weight:900;line-height:1.12;
-letter-spacing:-1.5px;overflow-wrap:break-word;
+letter-spacing:-1.5px;overflow-wrap:normal;word-break:normal;hyphens:none;
 text-shadow:0 6px 32px rgba(0,0,0,.92),0 2px 8px rgba(0,0,0,.95),0 0 3px rgba(0,0,0,.9)}}
 .potext .hl{{color:#8BD98F}}
 """
@@ -769,8 +777,16 @@ function hfFitText(){{
       (el.parentElement ? el.parentElement.clientHeight : Number.POSITIVE_INFINITY);
     let size=parseFloat(getComputedStyle(el).fontSize)||minSize;
     let guard=0;
-    while(size>minSize && guard<80 &&
-          (el.scrollWidth>el.clientWidth+1 || el.scrollHeight>maxHeight+1)){{
+    const tooLarge=function(){{
+      if(el.scrollWidth>el.clientWidth+1 || el.scrollHeight>maxHeight+1) return true;
+      if(!el.hasAttribute("data-word-safe-fit")) return false;
+      const box=el.getBoundingClientRect();
+      return Array.from(el.querySelectorAll(".word")).some(function(word){{
+        const rect=word.getBoundingClientRect();
+        return rect.left<box.left-1 || rect.right>box.right+1;
+      }});
+    }};
+    while(size>minSize && guard<100 && tooLarge()){{
       size-=2;
       el.style.fontSize=size+"px";
       guard+=1;
@@ -1093,7 +1109,7 @@ def build_and_render(frames: list[Path], frame_spans, motions, beat_words, fallb
 
     frame_spans  — [(beat_from, beat_to), ...] по одному на кадр; длина == len(frames).
     beat_durs    — фактические длительности битов из TTS (они ведут всю шкалу времени).
-    overlays     — объекты schemas_v7.Overlay.
+    overlays     — объекты schemas_v8_base.Overlay.
     payoff_frame — 2026-08-15: отдельный кадр для payoff-карточки (движок генерирует его
                    отдельно от кадра 0). Если не передан (None) — payoff-карточка, как и
                    раньше, использует `assets/frame0.png`; обратная совместимость со старыми
@@ -1135,7 +1151,7 @@ def build_and_render(frames: list[Path], frame_spans, motions, beat_words, fallb
     headline_dur = 0.0
     if headline.strip() and beat_durs:
         # Заголовок v8 относится к первому изображению и исчезает ровно с его сменой.
-        # Старое поведение v7 оставлено по умолчанию для обратной совместимости.
+        # Старое поведение v8 оставлено по умолчанию для обратной совместимости.
         headline_dur = _headline_duration(
             beat_durs, frame_spans, headline_until_first_cut
         )

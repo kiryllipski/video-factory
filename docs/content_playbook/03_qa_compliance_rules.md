@@ -1,5 +1,5 @@
 ---
-источник: .claude/skills/video-factory/references/qa_and_compliance.md
+источник: skills/codex-viral-shorts/SKILL.md и references/artifact-contract.md
 снято с коммита: 76a328a (2026-08-05)
 собрано моделью: Claude Sonnet 5 (claude-sonnet-5)
 статус: копия для правки — правки сюда сами по себе на пайплайн не влияют, см. ../README.md

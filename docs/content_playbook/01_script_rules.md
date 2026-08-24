@@ -1,15 +1,16 @@
 ---
-источник: .claude/skills/video-factory/references/authoring_guide.md §Сценарий
+источник: skills/codex-viral-shorts/SKILL.md §Editorial workflow
 снято с коммита: 76a328a (2026-08-05)
 собрано моделью: Claude Sonnet 5 (claude-sonnet-5)
 статус: копия для правки — правки сюда сами по себе на пайплайн не влияют, см. ../README.md
 ---
 
-# Правила сценария — как Claude пишет `script.json`
+# Правила сценария — как Codex оформляет `script.json`
 
-Источники правил: `orchestration/research/01_short_form_retention.md` (ретеншен),
+Источники правил: `skills/codex-viral-shorts/SKILL.md` и `docs/PIPELINE_V8.md`; исторические
+принципы: `orchestration/research/01_short_form_retention.md` (ретеншен),
 `research/29_nanobanana_consistency.md` (консистентность кадров), `research/03_gemini3_prompting.md`,
-`research/04_2026_image_montage_update.md` (safe-зоны/пейсинг). Схемы — `autopilot_factory/schemas.py`.
+`research/04_2026_image_montage_update.md` (safe-зоны/пейсинг). Схемы — `autopilot_factory/schemas_v8.py`.
 Пиши сценарий и субтитры на **английском** (ниши EN/global), если studio_context не говорит иначе.
 
 ---

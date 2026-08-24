@@ -1,7 +1,7 @@
-# content_playbook — редактируемая копия правил сценария и промптов
+# content_playbook — редактируемая копия правил сценария и промптов v8
 
 Эта папка — **черновик для правки**, не источник правды. Здесь лежат текстовые копии тех
-файлов, по которым Claude сейчас пишет `script.json` (сценарий) и `frame_plan.json` (промпты
+файлов, по которым Codex сейчас оформляет `script.json` (сценарий) и `frame_plan.json` (промпты
 кадров) для video-factory. Правь их сколько угодно — на живой пайплайн это само по себе
 не влияет.
 
@@ -9,10 +9,10 @@
 
 | Файл здесь | Копия чего (живой источник) | Что регулирует |
 |---|---|---|
-| [01_script_rules.md](01_script_rules.md) | `.claude/skills/video-factory/references/authoring_guide.md` §Сценарий | Хук, биты, CTA, poster_text, cta_plate, хронометраж |
-| [02_image_prompt_rules.md](02_image_prompt_rules.md) | `.claude/skills/video-factory/references/authoring_guide.md` §План кадров | Формула промпта кадра, композиция 9:16, ротация крупности/ракурса |
-| [03_qa_compliance_rules.md](03_qa_compliance_rules.md) | `.claude/skills/video-factory/references/qa_and_compliance.md` | Стоп-листы, комплаенс, чек-лист QA |
-| [04_channel_vitallogic.md](04_channel_vitallogic.md) | `autopilot_factory/channels/vitallogic_bad_pl/studio_context.md` | Правила конкретного канала: тон, хук-формулы PL, визуальный код, CTA |
+| [01_script_rules.md](01_script_rules.md) | `skills/codex-viral-shorts/SKILL.md` §Editorial workflow | Хук, биты, payoff, хронометраж |
+| [02_image_prompt_rules.md](02_image_prompt_rules.md) | `skills/codex-viral-shorts/SKILL.md` §Approved ironic style bible | Формула промпта кадра, композиция 9:16, safe area |
+| [03_qa_compliance_rules.md](03_qa_compliance_rules.md) | `skills/codex-viral-shorts/SKILL.md` и `references/artifact-contract.md` | Стоп-листы, комплаенс, чек-лист QA |
+| [04_channel_vitallogic.md](04_channel_vitallogic.md) | `autopilot_factory/channels/vitallogic_bad_pl/editorial_policy.md` + `studio_context_v8_pl.md` | Правила конкретного канала: широкий тематический охват, тон, хук-формулы PL, визуальный код, CTA |
 
 Универсальные файлы (01–03) действуют на все каналы. Канальный файл (04) их уточняет/переопределяет
 для VitalLogic — единственного канала, который сейчас публикуется. Если добавится второй живой
@@ -29,10 +29,10 @@
 2. Просишь меня «собери новую версию» (или конкретнее — «собери новый подход по сценарию» /
    «обнови правила кадров»).
 3. Я переношу твои правки обратно в живые файлы (правая колонка таблицы), прогоняю правки через
-   `autopilot_factory/schemas.py` (лимиты полей никуда не деваются — их нельзя обойти правкой
+   `autopilot_factory/schemas_v8.py` (лимиты полей никуда не деваются — их нельзя обойти правкой
    reference-файла), коммичу, ставлю git-тег версии, обновляю [VERSION.md](VERSION.md) и делаю
    снапшот в `docs/prompt_versions/` — так через месяц можно будет открыть файл и увидеть,
-   какими именно правилами был написан конкретный ролик, и какая модель Claude их применяла.
+   какими именно правилами был написан конкретный ролик, и какой v8-контракт применялся.
 
 Ничего не публикуется и не тратит деньги на этом этапе — текстовые стадии бесплатны, апрувить
 нужно будет только сам прогон медиа-генерации (стадия 8), как и раньше.

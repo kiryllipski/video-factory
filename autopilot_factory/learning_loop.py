@@ -116,9 +116,9 @@ def extract_levers(run_dir: Path) -> Dict[str, Any]:
             "cta_plate": (script.get("cta_plate") or "").strip() or None,
             "avg_beat_s": round(sum(b.get("dur_s", 0) for b in beats) / len(beats), 2) if beats else None,
         })
-        # --- рычаги v7 (schemas_v7) ---------------------------------------------
-        # Без них когорту v7 не с чем сравнивать: именно формат, доля графики и наличие
-        # конкретики в payload — те ручки, которые v7 и крутит. У прогонов v1-v6 этих
+        # --- рычаги v8 (schemas_v8) ---------------------------------------------
+        # Без них когорту v8 не с чем сравнивать: именно формат, доля графики и наличие
+        # конкретики в payload — те ручки, которые v8 и крутит. У прогонов v1-v6 этих
         # полей нет, и словарь просто не пополняется (обратная совместимость).
         if script.get("format"):
             overlays = script.get("overlays") or []
@@ -153,7 +153,7 @@ def extract_levers(run_dir: Path) -> Dict[str, Any]:
             "frames_count": len(frames) or None,
             "motions_distinct": sorted(set(motions)) or None,
         })
-        # v7: кадр покрывает диапазон битов, поэтому кадров меньше — само по себе
+        # v8: кадр покрывает диапазон битов, поэтому кадров меньше — само по себе
         # `frames_count` больше не сравнимо между версиями, нужна ротация крупности.
         if any(f.get("shot") for f in frames):
             lv.update({

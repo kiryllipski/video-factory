@@ -3,11 +3,10 @@
 > Как устроен runtime-конвейер, который из темы делает готовый ролик 9:16. Версия 0.1 (2026-06-30).
 > Принципы оркестрации — в `orchestration/GEMINI_ORCHESTRATION.md`.
 >
-> ⚠️ **Документ описывает контур v1–v6 (`engine.py` / `schemas.py`) и местами устарел** — фраза
-> «производство не запущено» неверна с июля 2026. Актуальный продакшен-путь — **v7**:
-> `engine_v7.py` · `assembly_v7.py` · `schemas_v7.py` (две оси контракта: рубрика и формат,
-> слой инфографики, машинные гейты). Его краткая справка — [docs/PIPELINE_V7.md](docs/PIPELINE_V7.md),
-> и именно она источник правды по текущему конвейеру.
+> ⚠️ Исторические разделы ниже содержат v1–v7 названия для воспроизводимости старых
+> артефактов. **Актуальный production path — v8 Codex:** `engine_v8.py` · `assembly_v8.py` ·
+> `schemas_v8.py` · `schemas_v8_base.py` · `skills/codex-viral-shorts/`. Его источники правды —
+> [docs/PIPELINE_V8.md](docs/PIPELINE_V8.md) и [docs/PIPELINE_V8_CODEX_STATUS.md](docs/PIPELINE_V8_CODEX_STATUS.md).
 
 ## 1. Каталоги
 
@@ -20,11 +19,13 @@ orchestration/            # build-time: раннеры, роли, ресёрч (
   roles/*.md              # системные промпты build-time (есть)
   research/*.md           # сохранённые своды-принципы (есть; R54/R55 — запуск faceless + инструменты идей)
 autopilot_factory/        # runtime-конвейер (СТРОИМ)
-  engine.py               # оркестратор одного ролика (стадии ниже)
+  engine_v8.py            # канонический Codex-оркестратор одного ролика
+  engine_v8_base.py       # общие v8 JSON/TTS/QA helpers
+  assembly_v8.py          # каноническая v8 HTML/HyperFrames-сборка
   cost_tracker.py         # учёт токенов по шагам (раннеры уже умеют писать в него)
-  prompts/*.md            # runtime-роли: scriptwriter, compliance, visual, qa...
-  schemas.py              # Pydantic-контракты между стадиями
-  channels/               # по каналу: studio_context.md + brand.json + media_plan.md
+  prompts/v8/             # runtime-роли: researcher, scriptwriter, compliance, visual, qa...
+  schemas_v8.py           # канонические v8 Pydantic-контракты
+  channels/               # по каналу: editorial_policy + studio_context_v8 + media_plan_v8
     biz_failures/ psychology/ wealth_viz/ vitallogic_bad_pl/
   runs/<channel>/<date>_<slug>/  # артефакты ролика: script.json, frames/, audio/, captions, out.mp4, cost.json
   publishers/youtube.py   # автопостинг YouTube Data API v3 (есть, портировано 2026-07-10)
@@ -38,15 +39,15 @@ autopilot_factory/        # runtime-конвейер (СТРОИМ)
 (не переносится) стадией 6 во внешнее хранилище:
 `/Users/kirillipski/Library/Mobile Documents/com~apple~CloudDocs/external storage/video/0.5/<channel>/<date>_<slug>/out.mp4`
 (iCloud — освобождает диск от накопления финальных роликов). Путь переопределяется переменной
-окружения `VIDEO_DELIVERY_ROOT`. Копирование делает `engine.deliver()`, вызывается из
-`engine.produce()` и `.claude/skills/video-factory/scripts/build_media.py`. Все ролики, собранные
+окружения `VIDEO_DELIVERY_ROOT`. Историческое копирование делал legacy `engine.deliver()`;
+активный v8 media build сохраняет run-артефакты и не меняет YouTube state. Все ролики, собранные
 до этой даты (~1.9GB, 21 прогон), перенесены (не скопированы) из `runs/` в это хранилище целиком
 вместе с промежуточными артефактами — для них рабочая копия в `runs/` больше не существует.
 
-## 2. Контракты данных (Pydantic, `schemas.py`)
+## 2. Контракты данных (Pydantic, `schemas_v8.py`)
 
 Стадии общаются строго через JSON-схемы (`run_structured`), не свободным текстом.
-`schemas.PIPELINE_VERSION` (сейчас **3.0**, factory_audit_2026-07-15) пишется в `run_meta.json`
+`schemas_v8.PIPELINE_VERSION` (сейчас **8.0**) пишется в `run_meta.json`
 (build_media) и `publish_log.jsonl` (publisher) — аналитика сравнивает версии по метрикам:
 - **Script** — `hook` (≤3с, v2: симптом в первых словах), `beats[]` (каждый: `voiceover`,
   `on_screen_text`, `visual_cue`, `dur_s`), `cta`, `total_dur_s`, `lang`,
@@ -61,7 +62,7 @@ autopilot_factory/        # runtime-конвейер (СТРОИМ)
 - **PublishPackage** — `title`/`description`/`hashtags`, **v2: `pinned_comment`** (вопрос-коммент
   владельца, постится после выхода в public) и **`title_template`** (метка ротации заголовков).
 
-## 3. Стадии конвейера (`engine.py`)
+## 3. Исторические стадии legacy-конвейера (`engine.py`)
 
 ```
 тема (из channels/<niche>/media_plan.md)
@@ -85,9 +86,9 @@ autopilot_factory/        # runtime-конвейер (СТРОИМ)
 Стадия 9 — видимое вовне действие (публикует на реальный канал), запускается только по явному
 подтверждению владельца, не автоматически по завершении сборки. Детали токенов/каналов — §7.
 
-**Рабочий путь для vitallogic (и рекомендованный для всех):** текстовые стадии 1–3/7/8 пишет
-Claude по скиллу `.claude/skills/video-factory` (Gemini-текст в engine.produce — legacy-путь
-для необслуживаемых каналов); медиа-стадии 4–6b — `scripts/build_media.py`. Бэкап v2 до правок —
+**Рабочий путь для vitallogic:** Codex пишет текстовые стадии и approved ImageGen manifest
+по скиллу `skills/codex-viral-shorts`; медиа-стадия — `engine_v8.py --build`,
+`assembly_v8.py` и локальные QA. Бэкап v2 до правок —
 `autopilot_factory/_backup/pipeline_v2_2026-07-15/`; обоснование v3 —
 `channels/vitallogic_bad_pl/factory_audit_2026-07-15.md`.
 
@@ -132,10 +133,10 @@ Claude по скиллу `.claude/skills/video-factory` (Gemini-текст в en
   Наклон CTA-плашки задан в GSAP, не в CSS: твин пишет `transform` и затирает CSS-ный `rotate()`.
   Оверлеи не анимированы намеренно — рендер идёт перемоткой по таймлайну, и не-GSAP анимация
   была бы недетерминированной (см. §5 «Детерминизм»).
-Кто чем пользуется — таблица вариантов в `.claude/skills/video-factory/SKILL.md`.
+Кто чем пользуется — активный контракт в `skills/codex-viral-shorts/SKILL.md`.
 
 **Слоевая сборка (2026-08-05, T2 / `6.0-layers`)** — отдельный путь, не скин:
-`.claude/skills/video-factory/scripts/assembly_layers.py`. Вместо одного `<img>` на бит —
+`archive/pipeline-v7/.claude/skills/video-factory/scripts/assembly_layers.py`. Вместо одного `<img>` на бит —
 плоский бумажный фон + несколько вырезок-слоёв, каждая со своим GSAP-треком (влёт/шлепок/
 оседание/покачивание) плюс процедурная бумажная «мебель» (обрывки, скотч, газетные полосы),
 рисуемая CSS'ом и потому бесплатная. Вырезки готовит `collage_elements.py`: «стикер-лист» из

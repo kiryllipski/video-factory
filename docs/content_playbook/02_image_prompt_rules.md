@@ -1,16 +1,16 @@
 ---
-источник: .claude/skills/video-factory/references/authoring_guide.md §План кадров
+источник: skills/codex-viral-shorts/SKILL.md §Approved ironic style bible
 снято с коммита: 76a328a (2026-08-05)
 собрано моделью: Claude Sonnet 5 (claude-sonnet-5)
 статус: копия для правки — правки сюда сами по себе на пайплайн не влияют, см. ../README.md
 ---
 
-# Правила промптов кадров — как Claude пишет `frame_plan.json`
+# Правила промптов кадров — как Codex пишет `frame_plan.json`
 
 Источники правил: `research/29_nanobanana_consistency.md` (консистентность кадров),
 `research/03_gemini3_prompting.md`, `research/04_2026_image_montage_update.md` (safe-зоны/пейсинг),
 `research/56_sokolov_montage_scene_construction.md` (разнообразие соседних кадров). Схема —
-`autopilot_factory/schemas.py` (`FramePlan`).
+`autopilot_factory/schemas_v8.py` (`FramePlan`).
 
 ---
 

@@ -40,18 +40,51 @@ API, но `Stayed to watch` и показы — только выгрузкой)
 
 1. **Тема приходит из широкой редакционной карты, затем получает рубрику и формат.**
    Старые доли `plate/day_body/how_much/really_true/label` больше не являются обязательным
-   медиамиксом; веса в `schemas_v7.ACTIVE_RUBRICS` — мягкий анти-монокультурный fallback.
+   медиамиксом; веса в `schemas_v8.ACTIVE_RUBRICS` — мягкий анти-монокультурный fallback.
    Для скользящего батча из 20 выпусков держим минимум 4 области и не более 40% одной области.
 2. **Серии по 2 ролика** в одной рубрике подряд — норма, три подряд — нет.
 3. **Формат не повторяется**, пока не выйдут два других (следит `pick_format`).
 4. **Payload бытовых рубрик — действие, выполнимое сегодня и бесплатно.**
-5. Тема из плана запускается так (рубрика, формат и угол передаются явно):
-   ```bash
-   cd autopilot_factory && python3 engine_v7.py --go \
-     --rubric day_body --format mistake \
-     --topic "kawa zaraz po przebudzeniu" \
-     --angle "kortyzol utrzymuje czuwanie sam; kofeina w tym oknie buduje tolerancję"
-   ```
+5. Тема из плана сначала превращается Codex в полный пакет по
+   `skills/codex-viral-shorts/SKILL.md`; после визуального принятия кадров сборка идёт
+   через `engine_v8.py --build` с обязательным `media_manifest.json`. `--go` для новых
+   Codex-пакетов не используется.
+
+## Приоритетная вставка из внешнего ресёрча — 2026-08-24
+
+Эта вставка добавлена из
+[`external_media_plan_2026-08-22.md`](external_media_plan_2026-08-22.md) и имеет приоритет
+при выборе ближайших свободных слотов после 24 августа. Отбор основан на внешних поисковых
+сигналах, внешних YouTube-упаковках и внешней evidence-базе; performance-метрики VitalLogic
+в ranking не использовались.
+
+Темы, уже произведённые или почти дословно стоящие в ближайшей очереди (кофе утром/после
+обеда, сонливость после lunch, прогулка после еды, яйца, йогурт, сок/cola, микроволновка),
+здесь не дублируются. Проверка публикации нужна только для дедупликации, а не для оценки
+эффективности.
+
+| Приоритет | ID внешнего плана | Рубрика | Формат | Тема (PL) | Угол и обязательная оговорка |
+|---:|---:|---|---|---|---|
+| 1 | 20 | research_lab | study_autopsy | **UPF — jeden uniwersalny złoczyńca?** | Сопоставить observational associations, RCT и проблему широкой категории; не объявлять всю UPF одинаково вредной |
+| 2 | 21 | movement | myth_autopsy | **Czy krzesło jest nowym papierosyem?** | Разобрать «сидение убивает» через общий объём движения и реальные офисные паузы; без страшилки о каждом стуле |
+| 3 | 22 | performance | office_case | **Ile przerwy potrzebuje człowiek, a ile Teams?** | Короткая офисная сцена и выполнимый timer-тест; не обещать одну идеальную цифру для всех |
+| 4 | 24 | movement | versus | **Biurko stojące czy spacer?** | Сравнить standing и walking как разные формы поведения; не выдавать стол для работы стоя за тренировку |
+| 5 | 25 | brain | micro_experiment | **Schody czy trzeci kubek kawy dla uwagi?** | Короткий тест внимания после движения; отметить небольшие и неоднородные исследования |
+| 6 | 28 | performance | study_autopsy | **Czy home office robi z człowieka mebel?** | Разобрать данные про sitting/steps при WFH с оговоркой о pandemic-heavy evidence |
+| 7 | 29 | movement | office_case | **Czy istnieje idealna pozycja przy biurku?** | Показать смену позы и движение вместо мифа о единственной «правильной» посадке; без диагностики боли |
+| 8 | 31 | brain | office_case | **Mózg czy 47 powiadomień?** | Наблюдаемый конфликт уведомлений и внимания; сначала подтвердить актуальные human experiments |
+| 9 | 32 | brain | study_autopsy | **Czy 40 Hz robi z biura laboratorium?** | Проверить focus music/binaural claim по обзорам и RCT; не обещать повышение интеллекта |
+| 10 | 36 | performance | timeline | **Dlaczego po 18:00 mózg zachowuje się jak piątek?** | Осенний свет, режим и прогулка; использовать сезонный повод без медицинского диагноза |
+| 11 | 37 | performance | timeline | **Kto ukradł godzinę z kalendarza?** | Перевод часов 25.10.2026; перед производством обновить официальную дату и проверить sleep evidence |
+| 12 | 38 | performance | cause_chain | **Czy produktywność może wyglądać jak siedzenie do nocy?** | Цепочка work hours → sleep → next-day focus; не романтизировать hustle и не давать медицинских выводов |
+| 13 | 40 | performance | office_case | **Czy najlepszy meeting zaczyna się od wyjścia z krzesła?** | Walking meeting только для подходящих задач; проверить research по cognition/work context |
+| 14 | 12 | at_shelf | versus | **Olej rzepakowy czy słonecznikowy?** | Сравнить обычные кухонные сценарии и состав; не назначать абсолютного «победителя» |
+| 15 | 16 | plate | number_shock | **Ile białka naprawdę mieści biurowy lunch?** | Перевести белок в реальные порции; не превращать ролик в персональную диету |
+
+После evidence-check первая производственная волна — ID 20, 21, 22, 24 и 25. Для каждого
+сначала выбрать три допустимых формата через selector, подтвердить источники и только потом
+передавать тему в сценарий. Секция ниже сохраняет исходный календарь как плановый архив и
+резерв, но не отменяет проверку фактического статуса производства.
 
 ---
 

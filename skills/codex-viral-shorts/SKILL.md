@@ -21,6 +21,7 @@ Own the editorial decision. Use the built-in Codex imagegen tool for frame gener
 - Use a clearly male Polish narrator for this channel by default (`VITALLOGIC_TTS_VOICE=Charon` in Gemini TTS unless the user explicitly selects another voice). The delivery must be bright, expressive, emotional, lively and conversational, with lightly ironic varied pitch and comic timing; it must not sound like a calm medical disclaimer or a flat audiobook.
 - Write for a non-specialist, not for an internal medical chart. Do not use unexplained clinical abbreviations such as `LDL`, `ApoB` or `HbA1c` in voice-over, captions, posters, overlays, payoff cards, titles, descriptions or CTAs. Prefer a sourced everyday phrase; if the technical distinction is essential, explain it in plain language before using the abbreviation and keep the explanation in the same beat.
 - Preserve the v8 gates. Build only a package that validates against `schemas_v8`, `engine_v8.script_errors`, and `engine_v8.plan_errors`.
+- Prevent structural repetition, not only duplicate topics. Before authoring, inspect the latest 8 same-channel run packages (local runs plus the iCloud archive when needed). Do not repeat the same combination of format, hook mechanism, first proof, turn placement, evidence device, overlay sequence, and payoff device in adjacent releases. For a follow-up in the same topic family, change at least three of those dimensions. Record the chosen `structure_variation` and the compared runs in `codex_strategy.json`.
 - Never upload, publish, schedule, reschedule, or otherwise change YouTube state unless the user gives a separate direct command for that action. Creating and validating a local MP4 does not authorize an upload. Before any explicitly authorized scheduling, inspect the live channel and confirm the requested slot is free.
 
 ## Editorial format selector
@@ -99,6 +100,7 @@ the research backlog instead of forcing it into a format.
    - Use the channel's past outliers and fresh Poland demand signals as separate inputs. Prefer a topic only when both signal a broad, recognisable audience or the potential gain justifies an experiment.
    - Choose a distribution lane: `feed`, `search`, or `hybrid`. For `search`/`hybrid`, record the actual Polish primary query and secondary queries. For `feed`, record the viewer promise instead of inventing a keyword target.
    - Define a falsifiable hypothesis, e.g. `visible household-unit comparison will lift average percentage viewed above 75% without reducing chose-to-view below 50%`.
+   - Define a structural signature before drafting: `hook_mechanism`, `first_proof`, `turn_device`, `evidence_device`, `overlay_sequence`, `payoff_device`, and `visual_rhythm`. Compare it with the latest eight releases. A new topic is not enough if its story skeleton would feel like the same Short again.
    - Run the editorial format selector above. Choose the best-fitting format after the evidence
      is known, not before. Record the candidates, scores, selected priority, reason, and comic
      engine in `codex_strategy.json`.
@@ -124,13 +126,14 @@ the research backlog instead of forcing it into a format.
    - Use at least four shot scales across a normal 9–12-frame Short, selected from the v8 schema (`extreme_macro`, `macro`, `medium`, `wide`, `abstract`). Do not use the same scale for more than two adjacent frames. Change scale when the story changes from reaction to evidence, from evidence to metaphor, or from rule to safety.
    - Allow controlled comic absurdity: exaggerated but readable reactions, awkward office objects, visual misdirection, and slightly ridiculous metaphors are welcome when they reinforce the spoken claim. Keep the health claim itself literal, sourced, and non-alarmist; the joke must not invent evidence or imply a treatment.
    - Write English 9:16 image prompts that describe evidence and composition, not decorative filler. Each frame must make one claim when viewed silently.
-   - Every prompt must name the shot scale, composition center, eye path, emotion, gaze, and gesture: what is sharpest/largest, where the hero is looking or gesturing, what is de-emphasized, and how the viewer moves to the next beat.
+   - Treat the YouTube Shorts UI as occupied space. For a 1080x1920 frame, keep irreplaceable faces, objects, evidence, labels, and planned readable in-image text inside the prompt-safe core: x=120..860 and y=200..1500. The right rail (x=860..1080, especially y=420..1560) and lower band (y=1540..1920) may contain only decorative or expendable background. The renderer owns captions and source cards; do not put a second thesis under them.
+   - Every prompt must name the shot scale, composition center, eye path, emotion, gaze, gesture, and safe-area decision: what is sharpest/largest, where the hero is looking or gesturing, what is de-emphasized, and how the viewer moves to the next beat.
 
 4. Hydrate the v8-compatible package.
    - Create `research_pack.json`, `script.json`, `compliance.json`, `fact_review.json`, `frame_plan.json`, `qa.json`, `publish_package.json`, and `codex_strategy.json` in a new run directory.
    - Use `references/artifact-contract.md` for the exact contract and commands.
    - Record `authored_by: "Codex"` in `codex_strategy.json`; it is an audit marker, not a performance claim.
-   - Record `distribution`, `hook_lab`, `format_selection`, and optional `series` objects in
+   - Record `distribution`, `hook_lab`, `format_selection`, `structure_variation`, and optional `series` objects in
      `codex_strategy.json`. If the idea is part of a follow-up cluster, record the series ID,
      episode, and next two or three angles.
    - Run the deterministic check:
@@ -140,7 +143,7 @@ the research backlog instead of forcing it into a format.
      ```
 
 5. Generate, render, and review.
-   - If the user requested imagegen, read the `imagegen` skill and generate every frame with the built-in imagegen tool, one frame/variant at a time. Inspect the outputs, copy accepted images into the run's `frames/` directory, and assemble from those approved files. Do not invoke a media command that silently regenerates the frames through Gemini.
+   - If the user requested imagegen, read the `imagegen` skill and generate every frame with the built-in imagegen tool, one frame/variant at a time. Inspect the outputs, copy accepted images into the run's `frames/` directory, and write `media_manifest.json` with ordered paths, SHA-256 hashes, `built_in_imagegen` provenance and approval for every frame. Assemble only from those manifest-approved files. Do not invoke a media command that silently regenerates the frames through Gemini.
    - Invoke only the media stage:
 
      ```bash
@@ -149,7 +152,7 @@ the research backlog instead of forcing it into a format.
      python3 engine_v8.py --build runs/<channel>/<run> --asset-channel vitallogic_bad_pl
      ```
 
-   - Require release gate pass, 1080×1920 H.264/AAC, readable poster/subtitles/source cards, and manual review of the first-frame, reveal, source-card, and payoff screenshots. During that review, verify that every spoken number names its object and unit, the matching overlay appears in the same beat, and no cut leaves a sentence with an accidental terminal cadence. Record planned versus actual MP4 duration for pacing diagnosis, but never block release solely because a strong story runs a little longer or shorter than its beat plan.
+   - Require release gate pass, 1080×1920 H.264/AAC, readable poster/subtitles/source cards, and manual review of the first-frame, reveal, source-card, and payoff screenshots. During that review, verify that every spoken number names its object and unit, the matching overlay appears in the same beat, no word is split or hyphenated by the renderer, no important visual element sits under the right-side Shorts controls or bottom UI, and no cut leaves a sentence with an accidental terminal cadence. Record planned versus actual MP4 duration for pacing diagnosis, but never block release solely because a strong story runs a little longer or shorter than its beat plan.
    - Fix the smallest causal defect, then rerun the failed gate. Do not publish a merely technically valid but visually confusing Short.
 
 6. Publish.

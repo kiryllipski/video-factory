@@ -7,9 +7,10 @@
 Канал: **@VitalLogic-nutriFlow** (YouTube Shorts, польский, БАД/wellness).
 Репозиторий (cwd для всех команд): `/Users/kirillipski/Desktop/mytools/0-video production`.
 
-**Полномочия.** Владелец 2026-07-26 поручил держать канал в постоянном автопилоте: ежедневно
-грузить готовые ролики и держать запас пополненным. Публикация и трата денег на генерацию
-этим поручением уже авторизованы — дополнительного «go» в рамках прогона не спрашивать.
+**Полномочия.** Этот runbook описывает отдельный операционный контур публикации. Производство
+можно выполнять по активному v8-контракту, но загрузка, публикация, расписание и любое изменение
+YouTube-состояния требуют отдельной прямой команды владельца. Трата денег на уже разрешённые
+локальные производственные вызовы не расширяет это разрешение.
 
 **⚠️ Каденс с 2026-08-13 — 1 ролик в день (решение владельца).** Было 2/день; второй ролик дня
 перестал получать распространение (12.08: утренний 915 просмотров, дневной — 5). Режем каденс,
@@ -38,7 +39,7 @@
    владелец успел их оценить. Снять задержку = удалить файл.
 
    **Порядок при каденсе 1/день — сначала текущая версия пайплайна** (`pipeline_version` в
-   `publish_package.json`; сейчас 7.0), внутри версии — по имени папки по возрастанию. Прогоны
+   `publish_package.json`; сейчас 8.0), внутри версии — по имени папки по возрастанию. Прогоны
    старых версий идут заполнителями, когда роликов текущей версии нет. Правило поменялось
    2026-08-13 вместе с каденсом: одного слота в день хватает на ~20 дней очереди, и если грузить
    «старые вперёд», когорта v7 выйдет в эфир только через три недели — учиться будет не на чем.
@@ -82,30 +83,33 @@
 
 7. Запас **меньше 5** → произвести `N = 5 - <запас>` новых роликов, но **не больше 2 за прогон**,
    **строго последовательно**, один за другим. Это жёсткое ограничение `CLAUDE.md`:
-   `build_media.py` / `hyperframes render` никогда не запускать параллельно — раньше вешало машину.
+   `engine_v8.py --build` / `hyperframes render` никогда не запускать параллельно — раньше вешало машину.
 
-   **Производить текущей версией пайплайна — v7, одной командой** (шаги a–e ниже описывают ручной
-   авторинг v3 и остаются фолбэком, если v7 упал):
+   **Производить текущей версией пайплайна — v8 Codex.** Сначала Codex создаёт полный пакет
+   по [Codex Shorts skill](../../skills/codex-viral-shorts/SKILL.md), затем после принятия
+   кадров ImageGen сборка выполняется явно:
    ```bash
-   cd autopilot_factory && python3 engine_v7.py --topic "<тема>" --go
+   cd autopilot_factory && VITALLOGIC_TTS_VOICE=Charon \
+     python3 engine_v8.py --build runs/vitallogic_bad_pl/<run> \
+     --asset-channel vitallogic_bad_pl
    ```
-   Формат выбирается ротацией сам (`pick_format` банит два последних), `publish_package.json`
-   пишет роль `prompts/v7/publisher.md`. Тему брать так же, как в пункте b (дубли проверять по
-   `runs/` И по iCloud).
+   `engine_v8.py --go` для Codex-пакетов не используется: он может делегировать редакционные
+   решения Gemini. Дубли проверять по `runs/` И по iCloud.
 
-   Для каждой новой темы (ручной путь v3):
+   Для каждой новой темы:
 
-   a. Прочитать целиком `autopilot_factory/channels/vitallogic_bad_pl/studio_context.md`
-      (рубрики, хук-формулы, визуальный код, комплаенс, CTA) и `media_plan.md` (опубликованные
+   a. Прочитать целиком `autopilot_factory/channels/vitallogic_bad_pl/editorial_policy.md`
+      и `autopilot_factory/channels/vitallogic_bad_pl/studio_context_v8_pl.md`
+      (рубрики, хук-формулы, визуальный код, комплаенс, CTA) и `media_plan_v8.md` (опубликованные
       темы + несобранные пункты очереди — собирать их в первую очередь).
 
-   b. Тему брать из медиаплана `channels/vitallogic_bad_pl/media_plan_v7.md` (там уже
+   b. Тему брать из медиаплана `channels/vitallogic_bad_pl/media_plan_v8.md` (там уже
       проставлены рубрика, формат и угол). Если план исчерпан — сначала собрать широкий
       кандидатный пул по `autopilot_factory/channels/vitallogic_bad_pl/editorial_policy.md`
       и внешним сигналам спроса (`orchestration/research/67_external_demand_sources.md`),
       затем присвоить теме рубрику и формат. Рубрика — производственный контракт, не фильтр
       допустимых областей.
-      **Проверить дубли не только по `media_plan.md`, но и по факту** — перечислить папки в
+      **Проверить дубли не только по `media_plan_v8.md`, но и по факту** — перечислить папки в
       `autopilot_factory/runs/vitallogic_bad_pl/` И в iCloud
       `~/Library/Mobile Documents/com~apple~CloudDocs/external storage/video/0.5/vitallogic_bad_pl/`
       (обе — источник истории тем, `runs/` неполна после архивации).
@@ -113,16 +117,15 @@
       двойная трата плюс каннибализация собственного охвата.
 
       ⚠️ Микс рубрик v1–v6 («50% Objaw→Błąd / 30% Zła Para / 20% Mit») отменён 2026-08-14.
-      `schemas_v7.ACTIVE_RUBRICS` задаёт мягкий fallback и анти-монокультурный контроль;
+      `schemas_v8.ACTIVE_RUBRICS` задаёт мягкий fallback и анти-монокультурный контроль;
       не превращай его веса в жёсткий медиаплан и не сужай поиск до добавок.
 
-   c. Прочитать [authoring_guide.md](../../.claude/skills/video-factory/references/authoring_guide.md)
-      (§Сценарий, §Кадры) и [qa_and_compliance.md](../../.claude/skills/video-factory/references/qa_and_compliance.md).
+   c. Прочитать [Codex Shorts skill](../../skills/codex-viral-shorts/SKILL.md) и
+      [artifact contract](../../skills/codex-viral-shorts/references/artifact-contract.md).
       Написать в `autopilot_factory/runs/vitallogic_bad_pl/<дата>_<slug>/`:
-      `script.json`, `compliance.json` (passed=true + cleaned_script, если правок не нужно),
-      `frame_plan.json` (ровно 1 кадр на бит, единый grade/light/lens, ротация крупности/ракурса —
-      см. studio_context §5), `qa.json`, `publish_package.json`
-      (title/description/hashtags/pinned_comment/title_template).
+      `research_pack.json`, `script.json`, `compliance.json`, `fact_review.json`,
+      `frame_plan.json`, `qa.json`, `publish_package.json`, `codex_strategy.json` и после
+      визуального просмотра кадров — `media_manifest.json`.
 
       **Комплаенс обязателен:** режим зависит от предмета темы и `rubric`. Для добавок и
       пищевых claims действует EFSA-режим; для еды, тела, движения, мозга и рабочего дня —
@@ -133,13 +136,16 @@
 
    d. Проверить:
       ```bash
-      python3 .claude/skills/video-factory/scripts/validate_run.py autopilot_factory/runs/vitallogic_bad_pl/<run>
+      python3 skills/codex-viral-shorts/scripts/check_package.py \
+        autopilot_factory/runs/vitallogic_bad_pl/<run>
       ```
       Починить ошибки (не предупреждения) перед следующим шагом.
 
    e. Собрать и **дождаться завершения** прежде чем начинать следующий ролик:
       ```bash
-      python3 .claude/skills/video-factory/scripts/build_media.py autopilot_factory/runs/vitallogic_bad_pl/<run> --channel vitallogic_bad_pl
+      cd autopilot_factory && VITALLOGIC_TTS_VOICE=Charon \
+        python3 engine_v8.py --build runs/vitallogic_bad_pl/<run> \
+        --asset-channel vitallogic_bad_pl
       ```
       Это тратит ~$0.5–0.7 и несколько минут — нормально, уже авторизовано.
       Потолок стоимости ролика — $3 (поднят владельцем 2026-08-13).
