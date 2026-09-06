@@ -402,7 +402,9 @@ class Beat(BaseModel):
     voiceover: str = Field(..., description="Текст озвучки бита на языке канала")
     on_screen_text: str = Field("", description="Караоке-субтитр, 2-4 слова (фолбэк)")
     visual_cue: str = Field(..., description="Что происходит в кадре — вход для visual_director")
-    dur_s: float = Field(..., ge=0.6, le=3.5)
+    # v9 deep stories may hold one evidence beat for up to five seconds. The
+    # timing layer still enforces the stricter 4.2-second core ceiling.
+    dur_s: float = Field(..., ge=0.6, le=5.0)
     act: Act = "body"
     emphasis: str = Field("", description=(
         "Одно ключевое слово этого бита (ровно как в voiceover) — сборка подсветит его "

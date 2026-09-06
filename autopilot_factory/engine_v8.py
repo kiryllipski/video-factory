@@ -987,7 +987,17 @@ def synth_audio(script: S.Script, out_dir: Path):
     # explicit per-run override.
     voice = os.environ.get("VITALLOGIC_TTS_VOICE", "Charon")
     base_style = _lang_config()["tts_style"]
-    base_speed = 1.12
+    # Владелец 2026-09-01: речь на натуральном темпе звучала вяло, канал переходит
+    # на +20% (VITALLOGIC_TTS_SPEED=1.2). Потолок поднят с 1.0 до 1.3; atempo меняет
+    # темп без сдвига высоты тона. Это стилевое решение, а не способ утрамбовать
+    # длинный сценарий в лимит — длину по-прежнему держим числом слов и битов.
+    try:
+        base_speed = float(os.environ.get("VITALLOGIC_TTS_SPEED", "1.0"))
+        hook_speed = float(os.environ.get("VITALLOGIC_TTS_HOOK_SPEED", str(base_speed)))
+    except ValueError as exc:
+        raise SystemExit("VITALLOGIC_TTS_SPEED and VITALLOGIC_TTS_HOOK_SPEED must be numeric") from exc
+    if not 0.5 <= base_speed <= 1.3 or not 0.5 <= hook_speed <= 1.3:
+        raise SystemExit("VITALLOGIC_TTS_SPEED and VITALLOGIC_TTS_HOOK_SPEED must be between 0.5 and 1.3")
     pieces: list[Path] = []
     durs: list[float] = []
     beat_words: list[list[dict]] = []
@@ -997,18 +1007,21 @@ def synth_audio(script: S.Script, out_dir: Path):
         wav = out_dir / f"beat{i}.wav"
         meta = out_dir / f"beat{i}.tts.json"
         style = base_style
-        speed = base_speed
+        speed = hook_speed if beat.act == "hook" else base_speed
         if i == len(script.beats) - 2:
             style += ", set up the final takeaway with a slight open cadence; do not sound final"
         elif i == len(script.beats) - 1:
             style += ", clearly separated final takeaway, slightly slower, decisive falling cadence"
-            speed = 1.04
+            # Замедление финала задаётся стилем озвучки, а не откатом темпа канала к 1.0:
+            # иначе последняя фраза звучит из другого ролика.
+            speed = base_speed
         signature = _sha(json.dumps({
             "text": beat.voiceover,
             "voice": voice,
             "style": style,
             "model": TTS_MODEL,
             "speed": speed,
+            "delivery_policy": "natural_conversational_no_atempo_v1",
         }, ensure_ascii=False, sort_keys=True))
         cached_signature = ""
         if meta.exists():
@@ -1018,15 +1031,6 @@ def synth_audio(script: S.Script, out_dir: Path):
                 )
             except Exception:
                 pass
-        elif wav.exists() and wav.stat().st_size > 1000 and i < len(script.beats) - 2:
-            # Alpha1 кэшировал только WAV. Для неизменившихся обычных битов безопасно
-            # принять старый файл и добавить manifest; два финальных бита должны быть
-            # пересинтезированы, потому что их delivery действительно изменился в alpha2.
-            _write_json(meta, {
-                "signature": signature, "voice": voice, "style": style,
-                "model": TTS_MODEL, "speed": speed, "adopted_alpha1_wav": True,
-            })
-            cached_signature = signature
         if not (wav.exists() and wav.stat().st_size > 1000 and cached_signature == signature):
             generate_speech(
                 beat.voiceover,
@@ -1040,6 +1044,7 @@ def synth_audio(script: S.Script, out_dir: Path):
             _write_json(meta, {
                 "signature": signature, "voice": voice, "style": style,
                 "model": TTS_MODEL, "speed": speed,
+                "delivery_policy": "natural_conversational_no_atempo_v1",
             })
         dur = _wav_dur(wav)
         beat_words.append(_estimate_word_timestamps(beat.voiceover, dur, cumulative))

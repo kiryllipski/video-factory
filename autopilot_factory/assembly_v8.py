@@ -218,7 +218,7 @@ def _caption_clips(beat_words, fallback_captions, beat_starts, beat_durs,
                     tweens.append(f'tl.to("#{wid}",{{color:"#ffffff",scale:1.0,duration:0.12,'
                                   f'ease:"power1.out"}},{cs + we:.3f});')
                 clips.append(
-                    f'<div id="cap{cap_idx}" class="clip cap" data-start="{cs:.3f}" '
+                    f'<div id="cap{cap_idx}" class="clip cap cap-beat-{i}" data-start="{cs:.3f}" '
                     f'data-duration="{cd:.3f}" data-track-index="8" data-fit-min="28" '
                     f'data-fit-height="164" data-word-safe-fit="true">{" ".join(spans)}</div>'
                 )
@@ -232,7 +232,7 @@ def _caption_clips(beat_words, fallback_captions, beat_starts, beat_durs,
                 cs = max(cs, prev_end)
                 prev_end = cs + cd
                 clips.append(
-                    f'<div id="cap{cap_idx}" class="clip cap" data-start="{cs:.3f}" '
+                    f'<div id="cap{cap_idx}" class="clip cap cap-beat-{i}" data-start="{cs:.3f}" '
                     f'data-duration="{cd:.3f}" data-track-index="8" data-fit-min="28" '
                     f'data-fit-height="164" data-word-safe-fit="true">{_word_safe_html(cap)}</div>'
                 )
@@ -417,7 +417,7 @@ def _overlay_clips(overlays, beat_starts, beat_durs, n_beats, source_cards=None)
             head = f'<div class="lhead" data-fit-min="24" data-word-safe-fit="true">{_accent_html(ov.label)}</div>' if ov.label else ""
             body = head + f'<div class="tlwrap"><div class="tlline"></div>{"".join(marks)}</div>'
 
-        card_class = " source-card-mode" if source_card else ""
+        card_class = (f" source-card-mode source-card-beat-{bi}" if source_card else "")
         clips.append(f'<div id="{oid}" class="clip ov ov-{kind} ov-beat-{bi}{card_class}" data-start="{start:.3f}" '
                      f'data-duration="{dur:.3f}" data-track-index="{5 + (k % 2)}">{body}</div>')
         # Каждый оверлей начинает таймлайн погашенным и входит через `fromTo`, а не `from`.
@@ -672,7 +672,7 @@ color:rgba(255,255,255,.82)}}
 
 .ov-stamp{{top:700px}}
 .ov-stamp .stamptext{{display:inline-block;max-width:100%;font-weight:900;
-letter-spacing:4px;text-transform:uppercase;color:transparent;
+letter-spacing:4px;text-transform:uppercase;color:#FF5B47;
 -webkit-text-stroke:4px #FF5B47;
 text-shadow:0 6px 26px rgba(0,0,0,.85),0 2px 8px rgba(0,0,0,.9);
 filter:drop-shadow(0 0 3px rgba(0,0,0,.6))}}
@@ -698,6 +698,14 @@ text-shadow:0 2px 10px rgba(0,0,0,.92),0 0 3px rgba(0,0,0,.85)}}
 /* v8 source, вариант A: полноценная editorial-карточка вместо микроскопической сноски. */
 .ov-source.source-card-mode{{top:380px;left:60px;right:60px;text-align:left;
 text-shadow:none;transform-origin:50% 50%;will-change:transform}}
+/* Office-object v9 frames reserve a blank upper board and keep both protagonists
+   below it.  The opt-in class is used for this run so the evidence card never
+   masks the chair/monitor action. */
+.office-safe .ov-source.source-card-mode{{top:110px}}
+/* Beat 5 has a tall hero in the lower half. Keep its caption in the clear upper-left
+   negative space so the words never cross the cup or its hands. */
+.ov-source.source-card-mode.source-card-beat-5{{top:180px;left:550px;right:40px}}
+.cap-beat-5{{left:60px;right:560px;top:420px;bottom:auto;text-align:left}}
 .source-card{{box-sizing:border-box;width:100%;padding:44px 54px 40px;
 background:rgba(255,253,247,.96);color:{INK};border:1px solid rgba(14,22,32,.14);
 border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.34),0 3px 12px rgba(0,0,0,.18)}}
@@ -729,6 +737,7 @@ background:linear-gradient(165deg,rgba(0,0,0,.58) 0%,rgba(0,0,0,.70) 52%,
 rgba(0,0,0,.80) 100%)}}
 .potext{{position:absolute;left:80px;right:80px;top:{SAFE_TOP}px;bottom:{SAFE_BOTTOM - 40}px;
 display:flex;align-items:center;justify-content:center}}
+.office-safe .potext{{top:120px;bottom:auto;height:520px}}
 .potext.payoff-top{{top:80px;bottom:auto;height:300px}}
 .poinner{{width:100%;text-align:center;color:#fff;font-weight:900;line-height:1.12;
 letter-spacing:-1.5px;overflow-wrap:normal;word-break:normal;hyphens:none;
@@ -750,6 +759,8 @@ def _build_html(frame_spans, motions, beat_words, fallback_captions, beat_starts
     hc, ht = _headline_clip(headline, headline_dur)
     pc, pt = _payoff_clip(payoff_text, payoff_start, total, frame_asset=payoff_asset)
     root_class = "has-source-card" if source_cards else ""
+    if os.environ.get("VITALLOGIC_OFFICE_SAFE_LAYOUT") == "1":
+        root_class = f"{root_class} office-safe".strip()
     texture = [f'<div id="vig" class="clip vig" data-start="0.000" data-duration="{total:.3f}" '
                f'data-track-index="2"></div>',
                f'<div id="grain" class="clip grain" data-start="0.000" data-duration="{total:.3f}" '

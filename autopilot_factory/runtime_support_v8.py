@@ -18,7 +18,7 @@ CHANNEL_VOICE = {
         "Charon",
         "bright, expressive, emotionally engaged male Polish narration; lively conversational pace, "
         "clear Polish articulation, varied pitch, playful comic timing, light irony",
-        1.15,
+        1.0,
     ),
 }
 

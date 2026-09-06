@@ -112,4 +112,10 @@ Publishing is a separate operation. Only after a new direct user command may the
 inspect live YouTube state and upload or schedule the approved run. Local build success never
 authorizes a YouTube mutation.
 
+For an active v9-retention sprint run, the full v8 package remains required and is extended by
+`retention_plan.json`. Run `engine_v9.py --preflight` before ImageGen and `engine_v9.py --build`
+after the approved media manifest exists. A successful v9 build records
+`pipeline_version: 9.0-retention`; a missing or false final release gate blocks the shared
+publisher.
+
 Never create a `PublishPackage` with facts or URLs absent from `ResearchPack`. Never call `engine_v8.py --go` for a Codex-authored Short.

@@ -1,6 +1,6 @@
 ---
 name: codex-viral-shorts
-description: Create and optionally publish evidence-led but entertaining Polish VitalLogic YouTube Shorts when Codex must own the strategic choice, research synthesis, Polish scenario, metadata, and English image prompts. Use for high-upside Shorts experiments that need expressive character acting, varied shot scales, lively male narration, imagegen frame generation, visual and factual QA, and separate post-publish analytics.
+description: Create and optionally publish evidence-led but entertaining Polish VitalLogic YouTube Shorts when Codex must own the strategic choice, research synthesis, Polish scenario, metadata, and English image prompts. Use for high-upside Shorts experiments that need expressive character acting, varied shot scales, lively male narration, imagegen frame generation, measured v9 retention timing, visual and factual QA, and separate post-publish analytics.
 ---
 
 # Codex Viral Shorts
@@ -23,6 +23,29 @@ Own the editorial decision. Use the built-in Codex imagegen tool for frame gener
 - Preserve the v8 gates. Build only a package that validates against `schemas_v8`, `engine_v8.script_errors`, and `engine_v8.plan_errors`.
 - Prevent structural repetition, not only duplicate topics. Before authoring, inspect the latest 8 same-channel run packages (local runs plus the iCloud archive when needed). Do not repeat the same combination of format, hook mechanism, first proof, turn placement, evidence device, overlay sequence, and payoff device in adjacent releases. For a follow-up in the same topic family, change at least three of those dimensions. Record the chosen `structure_variation` and the compared runs in `codex_strategy.json`.
 - Never upload, publish, schedule, reschedule, or otherwise change YouTube state unless the user gives a separate direct command for that action. Creating and validating a local MP4 does not authorize an upload. Before any explicitly authorized scheduling, inspect the live channel and confirm the requested slot is free.
+
+## Active v9 retention sprint
+
+The current 12-Short experiment keeps Codex-authored Polish scripts and built-in ImageGen as the
+production foundation. Read [`references/v9-retention.md`](references/v9-retention.md) before
+authoring a sprint run. Its measured timing rules override the older default duration and word-count
+guidance below whenever `retention_plan.json.version` is `9.0-retention`.
+
+- Use `core` (18-24 second target, 40-55 words) by default. Use `deep` (28-35 seconds,
+  30-60 words) only when the evidence supports a second meaningful event. Write to measured
+  natural-rate audio, never to an inflated word count.
+- No v9 MP4 may exceed 35 seconds; the `core` lane keeps its stricter 26-second ceiling.
+- Write the full v8-compatible evidence package plus `retention_plan.json`, then run
+  `engine_v9.py --preflight` before generating ImageGen frames.
+- Use one decisive hook or two compact hook beats; their measured audio must end by 3.2 seconds.
+  First proof starts by 3.0 seconds, turn by 45% and payoff by 78% of actual narration.
+- Do not use a generic spoken CTA after the payoff. Keep the post-view question in the pinned
+  comment.
+- The daily public cadence may be 1-4 Shorts. Record the planned count and slot in every retention
+  plan, keep a minimum four-hour public gap, and compare results within matching cadence contexts.
+- Vary the perceptual story, not only the machine format. Declare a creative fingerprint, compare
+  eight recent runs and change at least three high-salience axes.
+- A missing or failed final release gate blocks upload and scheduling. There is no advisory bypass.
 
 ## Editorial format selector
 
@@ -114,12 +137,15 @@ the research backlog instead of forcing it into a format.
 3. Write before generating media.
    - Create a Hook Lab with 3–5 materially different Polish openers. Record each hook, poster, first visual, hook type, first proof time, claim IDs, and a short score/rejection reason. Select one variant before writing the full script; render a second variant only as a controlled experiment.
    - Make the first frame understandable with the sound off: the object, result, or conflict must be visible immediately. Synchronise first visual, first word, poster, and audio accent around one promise.
-   - Use 9–12 beats for the default 25–32 second format. Put the hook in 0–2s, action/proof in 2–10s, progression or escalation in 10–24s, and the concrete payoff in the final 3–6s. The middle must add evidence, a contrast, or a changed viewer question; it may not paraphrase the hook.
+   - Outside the active v9 sprint, use 9–12 beats for the default 25–32 second format. Put the hook in 0–2s, action/proof in 2–10s, progression or escalation in 10–24s, and the concrete payoff in the final 3–6s. The middle must add evidence, a contrast, or a changed viewer question; it may not paraphrase the hook. During v9, follow the measured lane and timing contract instead.
    - Make the selected format structurally visible: the first beat establishes its conflict,
      the middle performs its proof/reversal, and the payoff resolves the exact question promised
      by the format. Do not use the same generic `mistake → fix` arc under a new label.
    - For a 15-second test use one idea and one payoff. Use 45–60 seconds only when the evidence needs a real arc; record duration as an experiment variable rather than a universal rule.
-   - Keep spoken sentences short. The payoff is a concrete rule, not a generic CTA. Put a natural binary prompt in the pinned comment after publication.
+   - Keep spoken sentences short and mouth-ready: one idea per beat, natural pauses, colloquial Polish, and occasional personification or a small joke. Write for a lively person speaking to one viewer, not an announcer or article reader.
+   - Make the opening land in the first 1.5–3 seconds with a short, time-independent question, accusation, or comic situation. Keep the delivery slightly quicker than neutral conversation, but never use speed to hide dense copy; leave room for the punchline and captions.
+   - Vary cadence deliberately: two or three very short lines around a medium explanation, then a concrete rule and a light binary viewer question. Read the Polish script aloud before TTS and rewrite any line that sounds written rather than spoken.
+   - The payoff is a concrete rule, not a generic CTA. Put a natural binary prompt in the pinned comment after publication.
    - Treat every number as one complete evidence event: say the measured object, number and unit in the same natural sentence (for example, `duże jajko ma około 186 mg cholesterolu`, never a dangling `około 186 miligramów`). Put its deterministic number overlay in that same beat, entering with the spoken number or within 0.5 seconds after it. Do not break a grammatically unfinished thought across separately generated TTS beats; either finish the sentence before the cut or write an explicit continuing connector.
    - Plan at least three meaningful visual events in the first six seconds. Adjacent shots must change scale, evidence, or viewer question.
    - Build an emotion arc before writing image prompts. Map each beat to an emotion that supports the line: e.g. suspicious curiosity in the hook, overconfident comic certainty before the reveal, surprise at the evidence, awkward caution at the limitation, knowing relief at the rule, and a warm but serious safety finish. Name the emotion and acting direction in `visual_cue` and in the English prompt.
@@ -139,20 +165,32 @@ the research backlog instead of forcing it into a format.
    - Run the deterministic check:
 
      ```bash
-     python3 skills/codex-viral-shorts/scripts/check_package.py autopilot_factory/runs/<channel>/<run>
+     uv run --with 'pydantic>=2,<3' \
+       python3 skills/codex-viral-shorts/scripts/check_package.py \
+       autopilot_factory/runs/<channel>/<run>
+     ```
+   - For a v9 sprint run, also create `retention_plan.json` from
+     `references/v9-retention.md`. Run the audio preflight before ImageGen:
+
+     ```bash
+     cd autopilot_factory
+     VITALLOGIC_TTS_VOICE=Charon uv run --with 'pydantic>=2,<3' --with google-genai \
+       python3 engine_v9.py --preflight \
+       runs/<channel>/<run>
      ```
 
 5. Generate, render, and review.
    - If the user requested imagegen, read the `imagegen` skill and generate every frame with the built-in imagegen tool, one frame/variant at a time. Inspect the outputs, copy accepted images into the run's `frames/` directory, and write `media_manifest.json` with ordered paths, SHA-256 hashes, `built_in_imagegen` provenance and approval for every frame. Assemble only from those manifest-approved files. Do not invoke a media command that silently regenerates the frames through Gemini.
-   - Invoke only the media stage:
+   - Invoke only the media stage. For the active sprint, build through v9 so actual timing remains
+     a hard release gate:
 
      ```bash
      cd autopilot_factory
-     VITALLOGIC_TTS_VOICE=Charon \\
-     python3 engine_v8.py --build runs/<channel>/<run> --asset-channel vitallogic_bad_pl
+     VITALLOGIC_TTS_VOICE=Charon uv run --with 'pydantic>=2,<3' --with google-genai \
+       python3 engine_v9.py --build runs/<channel>/<run> --asset-channel vitallogic_bad_pl
      ```
 
-   - Require release gate pass, 1080×1920 H.264/AAC, readable poster/subtitles/source cards, and manual review of the first-frame, reveal, source-card, and payoff screenshots. During that review, verify that every spoken number names its object and unit, the matching overlay appears in the same beat, no word is split or hyphenated by the renderer, no important visual element sits under the right-side Shorts controls or bottom UI, and no cut leaves a sentence with an accidental terminal cadence. Record planned versus actual MP4 duration for pacing diagnosis, but never block release solely because a strong story runs a little longer or shorter than its beat plan.
+   - Require release gate pass, 1080×1920 H.264/AAC, readable poster/subtitles/source cards, and manual review of the first-frame, reveal, source-card, and payoff screenshots. During that review, verify that every spoken number names its object and unit, the matching overlay appears in the same beat, no word is split or hyphenated by the renderer, no important visual element sits under the right-side Shorts controls or bottom UI, and no cut leaves a sentence with an accidental terminal cadence. Outside v9, record planned versus actual MP4 duration for pacing diagnosis. During the v9 sprint, enforce the measured target and lane as a hard release gate.
    - Fix the smallest causal defect, then rerun the failed gate. Do not publish a merely technically valid but visually confusing Short.
 
 6. Publish.
@@ -184,6 +222,7 @@ Analytics is a post-publish workflow, not a production step. When the user asks 
 ## Resources
 
 - `references/artifact-contract.md` — v8 package requirements and safe build/publish commands.
+- `references/v9-retention.md` — active sprint contract, retention plan example and measured gates.
 - `references/analytics.md` — separate post-publish cohort analysis and learning protocol.
 - `scripts/check_package.py` — local Pydantic and deterministic-gate validation for a Codex-authored package.
 

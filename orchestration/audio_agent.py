@@ -17,6 +17,7 @@ CLI:
 """
 import os
 import sys
+import time
 import wave
 import argparse
 import subprocess
@@ -78,13 +79,36 @@ def _speed_up(path: str, factor: float):
     os.replace(tmp, path)
 
 
+def _audio_from_response(resp):
+    """Return the first PCM payload, tolerating an intermittent empty Gemini response."""
+    for candidate in getattr(resp, "candidates", None) or []:
+        content = getattr(candidate, "content", None)
+        for part in getattr(content, "parts", None) or []:
+            inline = getattr(part, "inline_data", None)
+            if inline and inline.data:
+                return inline.data
+    return None
+
+
+def _empty_response_detail(resp) -> str:
+    candidates = getattr(resp, "candidates", None) or []
+    reasons = [str(getattr(candidate, "finish_reason", None)) for candidate in candidates]
+    feedback = getattr(resp, "prompt_feedback", None)
+    return f"candidates={len(candidates)} finish_reasons={reasons} prompt_feedback={feedback}"
+
+
 def generate_speech(text: str, voice: str = "Charon", style: str = "",
                     model: str = "tts", out: str = "", speed: float = 1.0) -> bytes:
-    """Синтез речи. style — инструкция подачи (напр. 'wise, cynical baritone, energetic fast pace').
-    ИЗБЕГАЙ слов tired/measured/slow/calm pace в style — модель воспринимает их буквально и
-    начинает говорить медленно. speed — дополнительный постпроцесс ffmpeg atempo (1.0 = без изменений,
-    1.15-1.25 — типичный диапазон, не искажает тембр в отличие от ускорения видео)."""
-    prompt = f"Say in a {style} voice, at a fast, energetic pace, no long pauses: {text}" if style else text
+    """Synthesize speech without changing its natural playback rate by default.
+
+    ``speed`` is an explicit ffmpeg ``atempo`` override; 1.0 leaves the generated
+    speech untouched. Do not use it as a way to fit a dense script into a time cap.
+    """
+    delivery = (
+        "in a lively, friendly, conversational way, as if telling a friend something "
+        "genuinely amusing; clear articulation, varied pitch, comic timing, light irony"
+    )
+    prompt = f"Say in a {style} voice, {delivery}: {text}" if style else f"Say {delivery}: {text}"
     config = types.GenerateContentConfig(
         response_modalities=["AUDIO"],
         speech_config=types.SpeechConfig(
@@ -94,18 +118,26 @@ def generate_speech(text: str, voice: str = "Charon", style: str = "",
         ),
     )
     mid = TTS_MODELS.get(model, model)
-    resp = client().models.generate_content(model=mid, contents=prompt, config=config)
-    if _cost:
-        _cost.record_tokens(mid, getattr(resp, "usage_metadata", None), step="tts")
-
     pcm = None
-    for part in resp.candidates[0].content.parts:
-        inline = getattr(part, "inline_data", None)
-        if inline and inline.data:
-            pcm = inline.data
+    last_detail = "no response"
+    for attempt in range(1, 4):
+        resp = client().models.generate_content(model=mid, contents=prompt, config=config)
+        if _cost:
+            _cost.record_tokens(mid, getattr(resp, "usage_metadata", None), step="tts")
+        pcm = _audio_from_response(resp)
+        if pcm is not None:
             break
+        last_detail = _empty_response_detail(resp)
+        if attempt < 3:
+            print(
+                f"[audio_agent] empty audio response; retry {attempt}/2 ({last_detail})",
+                file=sys.stderr,
+            )
+            time.sleep(1.5 * attempt)
     if pcm is None:
-        raise SystemExit("[audio_agent] модель не вернула аудио.")
+        raise SystemExit(
+            "[audio_agent] модель не вернула аудио после 3 попыток: " + last_detail
+        )
     if out:
         _write_wav(out, pcm)
         _speed_up(out, speed)

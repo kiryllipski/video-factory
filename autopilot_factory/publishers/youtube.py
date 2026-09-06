@@ -71,19 +71,17 @@ def _archive_to_icloud(run: Path, channel: str):
         pass
     return dest_dir
 
-# Каденс публикаций (research/53 — batch-публикация душит охват): фиксированные слоты.
-# **1/день, 06:00 Europe/Warsaw (04:00 UTC)** — решение владельца 2026-08-13: второй ролик дня
-# перестал получать распространение (12.08: утренний 915 просмотров, дневной — 5; 13.08 та же
-# картина), режем каденс вдвое, пока не научимся стабильно набирать просмотры. Оставлен именно
-# утренний слот: по 74 роликам медианы слотов равны (04:00 — 153, 12:00 — 164), но в 04:00 больше
-# верхних выбросов (1546/1041/920/915/858) и именно он выжил в оба провальных дня.
-# Прежнее значение — [(4, 0), (12, 0)]; вернуть, когда охват восстановится.
+# Каденс v9 retention sprint: владелец разрешил от 1 до 4 публичных Shorts в день с минимум
+# четырьмя часами между ними. Auto-scheduler использует четыре локальных семейства слотов;
+# фактическое количество задаётся числом переданных на публикацию роликов. Время хранится как
+# Europe/Warsaw, а не как постоянный UTC offset, чтобы летний/зимний переход не сдвигал публикацию.
 # Единственное место, где это число живёт —
 # раньше каждый вызывающий (люди/агенты/скрипты) пересчитывал слоты сам, независимо и по-разному
 # (см. STATUS.md §0г, 2026-07-27: обнаружено 16 задвоенных слотов из-за минимум 2 разных механизмов
 # подбора «следующего слота» — ни один не сверялся с реальным расписанием на YouTube). Теперь любой
 # вызов upload проверяется/подбирается ЖИВЫМ запросом к каналу — не локальным файлом/логом.
-CADENCE_SLOTS_UTC = [(4, 0)]  # (час, минута) UTC
+CADENCE_TIMEZONE = "Europe/Warsaw"
+CADENCE_SLOTS_LOCAL = [(6, 0), (11, 0), (16, 0), (21, 0)]
 
 
 def _scheduled_occupied_utc(yt) -> set:
@@ -114,16 +112,21 @@ def _scheduled_occupied_utc(yt) -> set:
 
 
 def _next_free_slot_utc(occupied: set, not_before) -> str:
-    """Следующий свободный слот по каденсу CADENCE_SLOTS_UTC, начиная от `not_before` (datetime,
-    aware/UTC), пропуская всё, что есть в `occupied`. Возвращает RFC3339 UTC ('...Z')."""
+    """Следующий свободный Warsaw-local слот, возвращённый как RFC3339 UTC (`...Z`)."""
     import datetime as _dt
-    day = not_before.date()
-    # первая кандидат-дата — сегодняшний день not_before; если оба сегодняшних слота уже прошли,
-    # цикл ниже просто перейдёт на следующий день
+    from zoneinfo import ZoneInfo
+
+    if not_before.tzinfo is None:
+        raise ValueError("not_before must be timezone-aware")
+    utc = _dt.timezone.utc
+    warsaw = ZoneInfo(CADENCE_TIMEZONE)
+    not_before_utc = not_before.astimezone(utc)
+    day = not_before_utc.astimezone(warsaw).date()
     while True:
-        for hh, mm in CADENCE_SLOTS_UTC:
-            cand = _dt.datetime(day.year, day.month, day.day, hh, mm, tzinfo=_dt.timezone.utc)
-            if cand < not_before:
+        for hh, mm in CADENCE_SLOTS_LOCAL:
+            local = _dt.datetime(day.year, day.month, day.day, hh, mm, tzinfo=warsaw)
+            cand = local.astimezone(utc)
+            if cand < not_before_utc:
                 continue
             iso = cand.strftime("%Y-%m-%dT%H:%M:%SZ")
             if iso not in occupied:
@@ -361,8 +364,15 @@ def _upload_one(yt, args, occupied: set):
     try:
         report = prepublisher.inspect_run(run, video, privacy=args.privacy, lang=lang)
         prepublisher.print_report(report)
+        if report.get("blocks_publication"):
+            failed = [
+                item.get("code", "unknown")
+                for item in report.get("issues", [])
+                if item.get("severity") == "error"
+            ]
+            sys.exit("[prepublisher] upload/schedule blocked: " + ", ".join(failed))
     except Exception as exc:
-        print(f"[prepublisher] warning: проверка не сработала ({exc}); публикация продолжается.")
+        sys.exit(f"[prepublisher] проверка не сработала; fail-closed stop ({exc})")
 
     title = (pkg.get("title") or run.name).strip()
     if not title:
@@ -399,7 +409,7 @@ def _upload_one(yt, args, occupied: set):
     tags = tags[:15]
 
     # Разрешение слота публикации — ВСЕГДА против расписания канала, снятого живым запросом (не
-    # локальных файлов/логов, см. CADENCE_SLOTS_UTC выше), а не заново на каждый вызов: `occupied`
+    # локальных файлов/логов, см. CADENCE_SLOTS_LOCAL выше), а не заново на каждый вызов: `occupied`
     # приходит от вызывающего (один live-снимок на весь батч) и дополняется ЛОКАЛЬНО ниже сразу
     # после резолва — раньше, чем реальный insert. Два режима:
     #   --publish-at auto        → подобрать ближайший свободный слот по каденсу самому
@@ -693,7 +703,8 @@ def main():
     u.add_argument("--category", default="27", help="YouTube categoryId (27=Education, дефолт)")
     u.add_argument("--publish-at", dest="publish_at", default=None,
                    help="Запланировать авто-публикацию. 'auto' — сам подберёт ближайший свободный "
-                        "слот по каденсу 1/день 06:00 Warsaw живым запросом к каналу "
+                        "слот по каденсу v9 (до 4/день: 06:00/11:00/16:00/21:00 Warsaw) "
+                        "живым запросом к каналу "
                         "(рекомендуется). Либо RFC3339 UTC, напр. 2026-07-11T06:00:00Z — если этот "
                         "слот уже занят другим private-видео на канале, будет автоматически сдвинут "
                         "на ближайший свободный (защита от наложений, см. STATUS.md §0г).")

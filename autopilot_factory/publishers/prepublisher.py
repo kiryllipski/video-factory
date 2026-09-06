@@ -8,13 +8,14 @@ PL-специфичные проверки (wellness-комплаенс, дис�
 при lang="pl", остальные каналы (biz_failures/psychology/wealth_viz, lang="en") их не видят.
 
 Задача PrePublisher: заметить проблемы упаковки/артефактов и записать их в лог.
-Он никогда не блокирует публикацию: upload/pipeline продолжаются даже при error-issues.
+Обычные packaging warnings остаются мягкими. Для современных v8/v9 прогонов отсутствие или
+провал release gate блокирует публикацию: финальный QA не может быть advisory после рендера.
 """
 import json
 import re
 import subprocess
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -116,6 +117,31 @@ def inspect_run(run_dir, video_path=None, privacy=None, lang=None):
     pkg_path = run / "publish_package.json"
     pkg = _load_json(pkg_path)
     qa = _load_json(run / "qa.json")
+    release = _load_json(run / "release_gate.json")
+    run_meta = _load_json(run / "run_meta.json") or {}
+    pipeline_version = str(run_meta.get("pipeline_version") or "")
+    modern_release = pipeline_version.startswith(("8", "9"))
+
+    if modern_release and release is None:
+        issues.append(_issue(
+            "error",
+            "release_gate_missing",
+            f"Для pipeline {pipeline_version} отсутствует release_gate.json.",
+            "release_gate",
+        ))
+    elif isinstance(release, dict) and release.get("passed") is not True:
+        failed_checks = [
+            str(item.get("name") or "unknown")
+            for item in release.get("checks", [])
+            if item.get("passed") is not True
+        ]
+        issues.append(_issue(
+            "error",
+            "release_gate_failed",
+            "Финальный release gate не пройден; upload/schedule запрещён.",
+            "failed_checks",
+            failed_checks,
+        ))
 
     if not video.exists():
         issues.append(_issue("error", "video_missing", "Видео для публикации не найдено.", "video", str(video)))
@@ -188,13 +214,14 @@ def inspect_run(run_dir, video_path=None, privacy=None, lang=None):
     if isinstance(qa, dict) and not qa.get("approved", True):
         issues.append(_issue("warning", "creative_qa_not_approved", "Creative QA был не approved, публикация всё равно не блокируется.", "blocking_issues", qa.get("blocking_issues", [])))
 
+    blocks_publication = any(item["severity"] == "error" for item in issues)
     report = {
-        "checked_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "run_dir": str(run),
         "video": str(video),
         "privacy": privacy,
         "status": "issues_found" if issues else "clean",
-        "blocks_publication": False,
+        "blocks_publication": blocks_publication,
         "summary": {
             "errors": sum(1 for item in issues if item["severity"] == "error"),
             "warnings": sum(1 for item in issues if item["severity"] == "warning"),
@@ -209,12 +236,13 @@ def inspect_run(run_dir, video_path=None, privacy=None, lang=None):
 def print_report(report):
     summary = report.get("summary", {})
     issues = report.get("issues", [])
+    blocking = bool(report.get("blocks_publication"))
     print(
         "[prepublisher] "
         f"errors={summary.get('errors', 0)} "
         f"warnings={summary.get('warnings', 0)} "
         f"info={summary.get('info', 0)} "
-        "(публикация не блокируется)"
+        + ("(ПУБЛИКАЦИЯ ЗАБЛОКИРОВАНА)" if blocking else "(публикация не блокируется)")
     )
     for item in issues[:12]:
         print(f"  - {item['severity']}: {item['code']} — {item['message']}")

@@ -82,6 +82,31 @@
 | 42 | Добавки / осень | **Vitamin D: słońce, szyba i kapsułka** — «Czy światło przez okno załatwia witaminę D?» | D1: `witamina D dawka`, `witamina D3 jaka najlepsza`; D2: vitamin D titles | `ready→live-check`; E11 + current Polish guidance, без персональной дозировки | `myth_autopsy` P0 | 69 / A | Окно пытается работать как солнце, капсула требует инструкцию; payoff: различить UVB, сезонность и индивидуальную рекомендацию |
 | 43 | Добавки / симптомы | **«У меня дефицит магния?»** — «Czy każdy skurcz to niedobór?» | D1: `objawy niedoboru magnezu`, `objawy niedoboru żelaza` | `do_not_take_as_diagnosis`; only general myth-busting after medical review, no symptom checker | `comment_answer` P2 | 48 / C | Комментарий требует диагноз за 30 секунд, редактор ставит стоп-кран; payoff: объяснить границу между вопросом и обследованием |
 
+## Sleep & Recovery — добавлено 2026-08-24
+
+Новый кластер добавлен в ротацию по польским autocomplete-сигналам, свежим исследованиям и
+безопасному потенциалу для Shorts. Первые пять тем уже находятся в разработке по прямому
+указанию владельца; шестая выбрана для текущего production. Остальные темы — резерв для
+чередования с питанием, движением, офисом и research lab.
+
+| ID | Статус | Рубрика / формат | Тема и польский viewer-question | Evidence / редакционная граница |
+|---|---|---|---|---|
+| S01 | в разработке | day_body / timeline | **Kawa po południu naprawdę zabiera sen?** | E6 + свежий caffeine meta-analysis; не превращать дозу/время в универсальный cutoff |
+| S02 | в разработке | day_body / myth_autopsy | **Jak zasnąć w 10 sekund?** | Сигналы `jak zasnąć szybko`, `w 5 minut`, `w 60 sekund`; разобрать обещание, не обещать лечение бессонницы |
+| S03 | в разработке | day_body / detective_case | **Budzisz się w nocy co godzinę — co może za tym stać?** | Сигналы `budzenie się w nocy`; перечислять возможные факторы, не ставить диагноз |
+| S04 | в разработке | performance / study_autopsy | **Telefon przed snem: światło czy aktywność?** | E14; не повторять абсолют «синий свет всё ломает», разделить интерактивность и сдвиг времени сна |
+| S05 | в разработке | day_body / study_autopsy | **Czy regularny sen jest ważniejszy niż idealne 8 godzin?** | E15; observational association, не причинный health promise |
+| S06 | опубликовано 2026-08-24 | brain / versus | **Czy zegarek naprawdę mierzy głęboki sen?** | E16; сравнить wearable output с PSG, не объявлять конкретный бренд «точным» или «бесполезным»; [YouTube](https://youtube.com/shorts/ds0cDszWvBs) · `ds0cDszWvBs` |
+| S07 | резерв | day_body / micro_experiment | **Drzemka kofeinowa — trik czy placebo?** | Сигналы `drzemka kofeinowa`, `drzemka regeneracja`; проверить дозу, timing и безопасную рамку |
+| S08 | резерв | day_body / mechanism_zoom | **Alkohol pomaga zasnąć, ale co dzieje się później?** | E17; 2025 meta-analysis по REM, без морализаторства и персональных выводов |
+| S09 | резерв | performance / micro_experiment | **Światło rano: czy naprawdę ustawia sen?** | E18; свежие daylight-исследования, не обобщать результаты пожилых на всех |
+| S10 | резерв | day_body / myth_autopsy | **Zaklejanie ust na noc — hack czy ryzyko?** | E19; systematic review 2025 с ограниченными данными, обязательная safety-оговорка |
+| S11 | резерв | day_body / number_shock | **Ile godzin snu naprawdę potrzebujesz?** | E20; не сводить сон к одной магической цифре |
+| S12 | резерв | supplements / myth_autopsy | **Melatonina na sen — dowód czy marketing?** | Высокий спрос, но supplement/YMYL-риск; без дозировок и персональных рекомендаций |
+| S13 | резерв | brain / versus | **Sen płytki, głęboki i REM — czy aplikacja to rozróżnia?** | Сигналы `sen płytki`, `sen głęboki`, `REM`; объяснить ограничения stage-estimation |
+| S14 | резерв | research_lab / study_autopsy | **Bezsenność: czy sama higiena snu wystarczy?** | E21; CBT-I как evidence topic, не выдавать ролик за лечение |
+| S15 | резерв | performance / timeline | **Praca zmianowa i jet lag: jak sen traci rytm?** | Сигналы `praca zmianowa sen`, `jet lag`; сначала обновить evidence и безопасный бытовой контекст |
+
 ## Доказательная ведомость
 
 | Код | Источник | Что он даёт |
@@ -102,6 +127,15 @@
 | E10 | [gov.pl: autumn wellbeing](https://www.gov.pl/web/psse-kamien-pomorski/jesienne-samopoczucie) | Внешний сезонный повод: меньше света, режим, прогулки; не источник диагноза |
 | E11 | [Pacjent: sunlight and vitamin D](https://szkolpacjent.ezdrowie.gov.pl/aktualnosc/swiatlo-sloneczne-i-witamina-d) и [PZH norms PDF](https://www.pzh.gov.pl/wp-content/uploads/2025/01/normy-02.01.pdf) | Официальный польский контекст UVB, окна и vitamin D; дозировку не переносить автоматически на зрителя |
 | E12 | [PubMed: movement interruptions review](https://pubmed.ncbi.nlm.nih.gov/42212020/) и [cognition review](https://pubmed.ncbi.nlm.nih.gov/42443952/) | Свежие обзоры по коротким эпизодам движения и cognition; effects promising but heterogeneous/low-certainty |
+| E13 | [PubMed: caffeine meta-analysis](https://pubmed.ncbi.nlm.nih.gov/41124973/) | 22 controlled crossover trials; dose/age effects on sleep, без универсального personal cutoff |
+| E14 | [PubMed: screen use in adults](https://pubmed.ncbi.nlm.nih.gov/40146105/) и [Sleep Health 2025](https://pubmed.ncbi.nlm.nih.gov/40713469/) | Связь экранов перед сном с duration/timing/quality; не доказывает одну причинную механику для всех |
+| E15 | [PubMed: sleep regularity and mortality](https://pubmed.ncbi.nlm.nih.gov/37738616/) и [2025 Korean cohort](https://pubmed.ncbi.nlm.nih.gov/40819005/) | Regularity как observational predictor; не причинное обещание долголетия |
+| E16 | [PubMed: wrist-worn trackers meta-analysis](https://pubmed.ncbi.nlm.nih.gov/39484805/) и [2025 wearable validation](https://pubmed.ncbi.nlm.nih.gov/40303381/) | Wearables лучше оценивают sleep/wake, чем отдельные sleep stages; PSG остаётся reference method |
+| E17 | [PubMed: alcohol and sleep meta-analysis](https://pubmed.ncbi.nlm.nih.gov/39631226/) | Даже низкая доза ассоциирована с уменьшением REM; dose/timing and uncertainty must remain visible |
+| E18 | [PubMed: morning daylight RCT](https://pubmed.ncbi.nlm.nih.gov/39627630/) | Morning daylight intervention and sleep timing; population/context limitation |
+| E19 | [PubMed: mouth-taping systematic review](https://pubmed.ncbi.nlm.nih.gov/40397877/) | 10 studies / 213 participants; limited evidence and possible risk with nasal obstruction |
+| E20 | [CDC: adult sleep facts](https://www.cdc.gov/sleep/data-research/facts-stats/adults-sleep-facts-and-stats.html) | Official baseline: adults need at least 7 hours, without erasing individual/context nuance |
+| E21 | [PubMed: digital CBT-I 2025](https://pubmed.ncbi.nlm.nih.gov/40373353/) и [AASM guideline](https://aasm.org/new-guideline-supports-behavioral-psychological-treatments-for-insomnia/) | CBT-I is stronger evidence topic than sleep hygiene alone; no self-treatment promise |
 
 ## Редакционные ограничения перед производством
 

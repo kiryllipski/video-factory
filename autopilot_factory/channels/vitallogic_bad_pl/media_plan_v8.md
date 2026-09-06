@@ -86,6 +86,44 @@ API, но `Stayed to watch` и показы — только выгрузкой)
 передавать тему в сценарий. Секция ниже сохраняет исходный календарь как плановый архив и
 резерв, но не отменяет проверку фактического статуса производства.
 
+## Оперативная ротация после 24.08 — Sleep & Recovery вперемешку
+
+Ниже — актуальная очередь редакционного движения, которая имеет приоритет над ещё не
+опубликованными строками исходного календаря. Уже опубликованные и уже загруженные private
+пакеты не переписываются. Sleep-темы чередуются с другими областями; S01–S05 уже в разработке,
+S06 опубликована 24.08.2026: [YouTube](https://youtube.com/shorts/ds0cDszWvBs) · `ds0cDszWvBs`.
+
+| Очередь | ID | Рубрика | Формат | Тема (PL) | Статус |
+|---:|---|---|---|---|---|
+| 1 | S01 | day_body | timeline | Kawa po południu naprawdę zabiera sen? | в разработке |
+| 2 | 20 | research_lab | study_autopsy | UPF — jeden uniwersalny złoczyńca? | следующая несонная тема |
+| 3 | S02 | day_body | myth_autopsy | Jak zasnąć w 10 sekund? | в разработке |
+| 4 | 21 | movement | myth_autopsy | Czy krzesło jest nowym papierosyem? | резерв после evidence-check |
+| 5 | S03 | day_body | detective_case | Budzisz się w nocy co godzinę — co może za tym stać? | в разработке |
+| 6 | 22 | performance | office_case | Ile przerwy potrzebuje człowiek, a ile Teams? | резерв после evidence-check |
+| 7 | S04 | performance | study_autopsy | Telefon przed snem: światło czy aktywność? | в разработке |
+| 8 | 24 | movement | versus | Biurko stojące czy spacer? | резерв после evidence-check |
+| 9 | S05 | day_body | study_autopsy | Czy regularny sen jest ważniejszy niż idealne 8 godzin? | в разработке |
+| 10 | 25 | brain | micro_experiment | Schody czy trzeci kubek kawy dla uwagi? | резерв после evidence-check |
+| 11 | S06 | brain | versus | Czy zegarek naprawdę mierzy głęboki sen? | опубликовано 24.08.2026 |
+| 12 | 28 | performance | study_autopsy | Czy home office robi z człowieka mebel? | следующий несонный кандидат |
+| 13 | S07 | day_body | micro_experiment | Drzemka kofeinowa — trik czy placebo? | резерв |
+| 14 | 29 | movement | office_case | Czy istnieje idealna pozycja przy biurku? | резерв |
+| 15 | S08 | day_body | mechanism_zoom | Alkohol pomaga zasnąć, ale co dzieje się później? | резерв |
+| 16 | 31 | brain | office_case | Mózg czy 47 powiadomień? | резерв |
+| 17 | S09 | performance | micro_experiment | Światło rano: czy naprawdę ustawia sen? | резерв |
+| 18 | 32 | brain | study_autopsy | Czy 40 Hz robi z biura laboratorium? | резерв |
+| 19 | S10 | day_body | myth_autopsy | Zaklejanie ust na noc — hack czy ryzyko? | резерв / safety review |
+| 20 | 36 | performance | timeline | Dlaczego po 18:00 mózg zachowuje się jak piątek? | сезонный резерв |
+| 21 | S11 | day_body | number_shock | Ile godzin snu naprawdę potrzebujesz? | резерв |
+| 22 | 37 | performance | timeline | Kto ukradł godzinę z kalendarza? | проверить перед датой |
+| 23 | S12 | supplements | myth_autopsy | Melatonina na sen — dowód czy marketing? | резерв / supplement review |
+| 24 | 38 | performance | cause_chain | Czy produktywność może wyglądać jak siedzenie do nocy? | резерв |
+| 25 | S13 | brain | versus | Sen płytki, głęboki i REM — czy aplikacja to rozróżnia? | резерв |
+| 26 | 40 | performance | office_case | Czy najlepszy meeting zaczyna się od wyjścia z krzesła? | резерв |
+| 27 | S14 | research_lab | study_autopsy | Bezsenność: czy sama higiena snu wystarczy? | резерв / medical framing |
+| 28 | S15 | performance | timeline | Praca zmianowa i jet lag: jak sen traci rytm? | резерв |
+
 ---
 
 ## Неделя 1 (18–24 августа) — вход в новые рубрики

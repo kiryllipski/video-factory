@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate a Codex-authored v8 content package before costly media generation."""
+"""Validate a Codex-authored v8/v9 content package before costly media generation."""
 from __future__ import annotations
 
 import json
@@ -154,6 +154,17 @@ def main() -> int:
 
     import engine_v8 as E  # pylint: disable=import-outside-toplevel
     import schemas_v8 as S  # pylint: disable=import-outside-toplevel
+    retention_path = run_dir / "retention_plan.json"
+    retention_plan = None
+    v9_engine = None
+    if retention_path.is_file():
+        import engine_v9 as v9_engine  # pylint: disable=import-outside-toplevel
+        import schemas_v9 as S9  # pylint: disable=import-outside-toplevel
+        try:
+            retention_plan = S9.RetentionPlan(**load(retention_path))
+        except Exception as exc:
+            print(f"schema error: retention_plan.json: {exc}", file=sys.stderr)
+            return 1
 
     needed = {
         "research": ("research_pack.json", S.ResearchPack),
@@ -188,7 +199,10 @@ def main() -> int:
     if not values["qa"].passed:
         errors.append("semantic QA must pass")
     errors.extend(E.research_errors(values["research"]))
-    errors.extend(E.script_errors(values["script"], values["research"]))
+    if retention_plan is not None:
+        errors.extend(v9_engine.v9_script_errors(values["script"], values["research"]))
+    else:
+        errors.extend(E.script_errors(values["script"], values["research"]))
     errors.extend(E.plan_errors(values["plan"], values["script"], values["research"]))
 
     # Format choice is a deliberate Codex editorial decision, not an incidental field copied
