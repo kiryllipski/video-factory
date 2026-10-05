@@ -74,3 +74,14 @@ config/channel/
 
 # Локальные runtime-локи Claude Code
 .claude/scheduled_tasks.lock
+
+# ─── Локальные артефакты HyperFrames-проектов ─────────────────────────
+backups/
+videos/**/.hyperframes/
+videos/**/.thumbnails/
+videos/**/.waveform-cache/
+videos/**/capture/
+videos/**/snapshots/
+videos/**/renders/
+videos/**/public/audio/
+videos/**/public/images/
